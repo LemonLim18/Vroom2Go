@@ -1,0 +1,9 @@
+{
+  "name": "Vroom2 Go",
+  "description": "A comprehensive marketplace connecting vehicle owners with verified mechanic shops, featuring tiered pricing, diagnostics, and community forums.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
