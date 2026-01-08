@@ -61,6 +61,40 @@ const CALENDAR_SLOTS = [
 
 export const ShopDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const [showAddServiceModal, setShowAddServiceModal] = useState(false);
+  const [showAllJobsModal, setShowAllJobsModal] = useState(false);
+  const [showEditScheduleModal, setShowEditScheduleModal] = useState(false);
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [showMessageModal, setShowMessageModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<typeof MOCK_QUOTE_REQUESTS[0] | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Show toast notification
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Handle actions
+  const handleSendQuote = () => {
+    showToast(`Quote sent successfully for ${selectedRequest?.vehicleInfo?.make} ${selectedRequest?.vehicleInfo?.model}!`);
+    setShowQuoteModal(false);
+    setSelectedRequest(null);
+  };
+
+  const handleDecline = (request: typeof MOCK_QUOTE_REQUESTS[0]) => {
+    showToast(`Request declined for ${request.vehicleInfo?.make} ${request.vehicleInfo?.model}`);
+  };
+
+  const handleMessage = (request: typeof MOCK_QUOTE_REQUESTS[0]) => {
+    setSelectedRequest(request);
+    setShowMessageModal(true);
+  };
+
+  const handleOpenQuoteModal = (request: typeof MOCK_QUOTE_REQUESTS[0]) => {
+    setSelectedRequest(request);
+    setShowQuoteModal(true);
+  };
 
   const tabs = [
     { id: 'overview' as const, label: 'Overview', icon: TrendingUp },
@@ -79,7 +113,10 @@ export const ShopDashboard: React.FC = () => {
           </h1>
           <p className="text-slate-400">Manage your services and bookings</p>
         </div>
-        <button className="btn btn-primary gap-2">
+        <button 
+          onClick={() => setShowAddServiceModal(true)}
+          className="btn btn-primary gap-2"
+        >
           <Wrench className="w-4 h-4" /> Add Service
         </button>
       </div>
@@ -188,7 +225,12 @@ export const ShopDashboard: React.FC = () => {
                     </span>
                   </div>
                 ))}
-                <button className="btn btn-sm btn-ghost w-full">View All</button>
+                <button 
+                  onClick={() => setShowAllJobsModal(true)}
+                  className="btn btn-sm btn-ghost w-full"
+                >
+                  View All
+                </button>
               </div>
             </div>
           </div>
@@ -284,13 +326,22 @@ export const ShopDashboard: React.FC = () => {
                 )}
 
                 <div className="flex gap-2">
-                  <button className="btn btn-sm btn-ghost gap-1">
+                  <button 
+                    onClick={() => handleMessage(request)}
+                    className="btn btn-sm btn-ghost gap-1"
+                  >
                     <MessageSquare className="w-4 h-4" /> Message
                   </button>
-                  <button className="btn btn-sm btn-outline gap-1">
+                  <button 
+                    onClick={() => handleDecline(request)}
+                    className="btn btn-sm btn-outline gap-1"
+                  >
                     <XCircle className="w-4 h-4" /> Decline
                   </button>
-                  <button className="btn btn-sm btn-primary gap-1">
+                  <button 
+                    onClick={() => handleOpenQuoteModal(request)}
+                    className="btn btn-sm btn-primary gap-1"
+                  >
                     <Send className="w-4 h-4" /> Send Quote
                   </button>
                 </div>
@@ -305,7 +356,12 @@ export const ShopDashboard: React.FC = () => {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-lg">Weekly Availability</h3>
-            <button className="btn btn-primary btn-sm">Edit Schedule</button>
+            <button 
+              onClick={() => setShowEditScheduleModal(true)}
+              className="btn btn-primary btn-sm"
+            >
+              Edit Schedule
+            </button>
           </div>
 
           <div className="glass-card rounded-2xl p-6 border border-white/5 overflow-x-auto">
@@ -465,6 +521,175 @@ export const ShopDashboard: React.FC = () => {
             <div className="glass-card rounded-2xl p-5 border border-white/5 text-center">
               <p className="text-3xl font-black">0</p>
               <p className="text-sm text-slate-400">Disputes</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="toast toast-end toast-bottom z-50">
+          <div className="alert alert-success">
+            <CheckCircle className="w-5 h-5" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Add Service Modal */}
+      {showAddServiceModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-4">Add New Service</h2>
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label"><span className="label-text">Service Name</span></label>
+                <input type="text" placeholder="e.g., Full Synthetic Oil Change" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Category</span></label>
+                <select className="select select-bordered bg-slate-800 border-white/10">
+                  <option>Maintenance</option>
+                  <option>Repair</option>
+                  <option>Diagnostic</option>
+                </select>
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Your Price</span></label>
+                <input type="text" placeholder="$75.00" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Estimated Duration</span></label>
+                <input type="text" placeholder="45 mins" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowAddServiceModal(false)} className="btn btn-ghost flex-1">Cancel</button>
+              <button onClick={() => { showToast('Service added successfully!'); setShowAddServiceModal(false); }} className="btn btn-primary flex-1">Add Service</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View All Jobs Modal */}
+      {showAllJobsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-2xl w-full max-h-[80vh] overflow-hidden border border-white/10">
+            <div className="sticky top-0 bg-slate-900 p-6 border-b border-white/5 flex items-center justify-between">
+              <h2 className="text-2xl font-bold">All Upcoming Jobs</h2>
+              <button onClick={() => setShowAllJobsModal(false)} className="btn btn-ghost btn-circle btn-sm">✕</button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <div className="space-y-3">
+                {MOCK_BOOKINGS.map((booking) => (
+                  <div key={booking.id} className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl">
+                    <div>
+                      <p className="font-bold">{booking.serviceName}</p>
+                      <p className="text-sm text-slate-400">{booking.vehicle}</p>
+                      <p className="text-xs text-slate-500">{booking.date}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`badge ${booking.status === 'Confirmed' ? 'badge-primary' : booking.status === 'Completed' ? 'badge-success' : 'badge-ghost'}`}>
+                        {booking.status}
+                      </span>
+                      <p className="text-sm font-bold mt-1">{booking.price}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send Quote Modal */}
+      {showQuoteModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-2">Send Quote</h2>
+            <p className="text-slate-400 mb-4">
+              {selectedRequest.vehicleInfo?.year} {selectedRequest.vehicleInfo?.make} {selectedRequest.vehicleInfo?.model}
+            </p>
+            <div className="bg-slate-800/50 p-4 rounded-xl mb-4">
+              <p className="text-sm text-slate-400 mb-2">Customer Issue:</p>
+              <p>{selectedRequest.description}</p>
+            </div>
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label"><span className="label-text">Estimated Total</span></label>
+                <input type="text" placeholder="$350.00" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Labor Hours</span></label>
+                <input type="number" placeholder="2" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Notes for Customer</span></label>
+                <textarea placeholder="Additional details..." className="textarea textarea-bordered bg-slate-800 border-white/10 h-20" />
+              </div>
+              <div className="form-control">
+                <label className="cursor-pointer label justify-start gap-3">
+                  <input type="checkbox" className="checkbox checkbox-primary" />
+                  <span className="label-text">Guarantee this price</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowQuoteModal(false); setSelectedRequest(null); }} className="btn btn-ghost flex-1">Cancel</button>
+              <button onClick={handleSendQuote} className="btn btn-primary flex-1 gap-2">
+                <Send className="w-4 h-4" /> Send Quote
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Message Modal */}
+      {showMessageModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-2">Send Message</h2>
+            <p className="text-slate-400 mb-4">
+              To: Customer ({selectedRequest.vehicleInfo?.make} {selectedRequest.vehicleInfo?.model} owner)
+            </p>
+            <div className="form-control">
+              <textarea placeholder="Type your message..." className="textarea textarea-bordered bg-slate-800 border-white/10 h-32" />
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowMessageModal(false); setSelectedRequest(null); }} className="btn btn-ghost flex-1">Cancel</button>
+              <button onClick={() => { showToast('Message sent successfully!'); setShowMessageModal(false); setSelectedRequest(null); }} className="btn btn-primary flex-1 gap-2">
+                <MessageSquare className="w-4 h-4" /> Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Schedule Modal */}
+      {showEditScheduleModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-4">Edit Weekly Schedule</h2>
+            <div className="space-y-3">
+              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, idx) => (
+                <div key={day} className="flex items-center justify-between">
+                  <label className="cursor-pointer label justify-start gap-3">
+                    <input type="checkbox" className="checkbox checkbox-primary checkbox-sm" defaultChecked={idx < 6} />
+                    <span className="font-medium w-24">{day}</span>
+                  </label>
+                  {idx < 6 && (
+                    <div className="flex items-center gap-2">
+                      <input type="time" defaultValue={idx < 5 ? "08:00" : "09:00"} className="input input-sm input-bordered bg-slate-800 border-white/10" />
+                      <span>-</span>
+                      <input type="time" defaultValue={idx < 5 ? "18:00" : "16:00"} className="input input-sm input-bordered bg-slate-800 border-white/10" />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowEditScheduleModal(false)} className="btn btn-ghost flex-1">Cancel</button>
+              <button onClick={() => { showToast('Schedule updated successfully!'); setShowEditScheduleModal(false); }} className="btn btn-primary flex-1">Save Schedule</button>
             </div>
           </div>
         </div>

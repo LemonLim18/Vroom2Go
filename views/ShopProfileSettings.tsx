@@ -40,6 +40,14 @@ export const ShopProfileSettings: React.FC = () => {
   const shop = MOCK_SHOPS[0];
   const [activeTab, setActiveTab] = useState<ShopSettingsTab>('profile');
   const [isEditing, setIsEditing] = useState(false);
+  const [showAddServiceModal, setShowAddServiceModal] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Show toast notification
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   // Shop form state
   const [shopData, setShopData] = useState({
@@ -426,7 +434,10 @@ export const ShopProfileSettings: React.FC = () => {
                 <Wrench className="w-5 h-5 text-primary" />
                 Services Offered ({shopServices.length})
               </h3>
-              <button className="btn btn-primary btn-sm gap-1">
+              <button 
+                onClick={() => setShowAddServiceModal(true)}
+                className="btn btn-primary btn-sm gap-1"
+              >
                 <Plus className="w-4 h-4" /> Add Service
               </button>
             </div>
@@ -601,6 +612,51 @@ export const ShopProfileSettings: React.FC = () => {
                   Delete Account
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="toast toast-end toast-bottom z-50">
+          <div className="alert alert-success">
+            <CheckCircle className="w-5 h-5" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Add Service Modal */}
+      {showAddServiceModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-4">Add New Service</h2>
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label"><span className="label-text">Service Name</span></label>
+                <input type="text" placeholder="e.g., Full Synthetic Oil Change" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Category</span></label>
+                <select className="select select-bordered bg-slate-800 border-white/10">
+                  <option>Maintenance</option>
+                  <option>Repair</option>
+                  <option>Diagnostic</option>
+                </select>
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Your Price</span></label>
+                <input type="text" placeholder="$75.00" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Estimated Duration</span></label>
+                <input type="text" placeholder="45 mins" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowAddServiceModal(false)} className="btn btn-ghost flex-1">Cancel</button>
+              <button onClick={() => { showToast('Service added successfully!'); setShowAddServiceModal(false); }} className="btn btn-primary flex-1">Add Service</button>
             </div>
           </div>
         </div>
