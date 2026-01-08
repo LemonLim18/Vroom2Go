@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Layout } from './components/Layout';
-import { UserRole, Service, Shop } from './types';
+import { UserRole, Service, Shop, Vehicle, Quote, Booking } from './types';
 import { OwnerHome } from './views/OwnerHome';
 import { Forum } from './views/Forum';
 import { ShopDashboard } from './views/ShopDashboard';
@@ -8,11 +8,19 @@ import { ShopProfile } from './views/ShopProfile';
 import { BookingView } from './views/BookingView';
 import { UserProfile } from './views/UserProfile';
 import { ChatView } from './views/ChatView';
-import { MOCK_SERVICES } from './constants';
-import { Star, MapPin, CheckCircle, Clock, ShieldCheck, User } from 'lucide-react';
+// New Phase 2 Views
+import { OnboardingView } from './views/OnboardingView';
+import { VehicleProfileView } from './views/VehicleProfileView';
+import { CompareShopsView } from './views/CompareShopsView';
+import { QuoteRequestView } from './views/QuoteRequestView';
+import { QuoteDetailView } from './views/QuoteDetailView';
+import { JobProgressView } from './views/JobProgressView';
+import { FinalInvoiceView } from './views/FinalInvoiceView';
+import { AdminConsole } from './views/AdminConsole';
+import { MOCK_SERVICES, MOCK_BOOKINGS, MOCK_QUOTES } from './constants';
 
-// Placeholder view for Service Details (kept simple inside App for now)
-const ServiceDetails: React.FC<{service: Service, onBack: () => void}> = ({ service, onBack }) => (
+// Placeholder view for Service Details
+const ServiceDetails: React.FC<{service: Service, onBack: () => void, onCompare: () => void, onRequestQuote: () => void}> = ({ service, onBack, onCompare, onRequestQuote }) => (
   <div className="animate-fade-in">
     <button onClick={onBack} className="btn btn-ghost mb-4">← Back</button>
     <div className="card bg-base-100 shadow-xl border border-base-200">
@@ -41,8 +49,9 @@ const ServiceDetails: React.FC<{service: Service, onBack: () => void}> = ({ serv
           </table>
         </div>
         
-        <div className="card-actions justify-end mt-8">
-          <button className="btn btn-primary btn-lg">Compare Local Shops</button>
+        <div className="card-actions justify-end mt-8 gap-2">
+          <button className="btn btn-outline" onClick={onCompare}>Compare Shops</button>
+          <button className="btn btn-primary btn-lg" onClick={onRequestQuote}>Request Quote</button>
         </div>
       </div>
     </div>
@@ -52,19 +61,48 @@ const ServiceDetails: React.FC<{service: Service, onBack: () => void}> = ({ serv
 const App: React.FC = () => {
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.OWNER);
   const [currentView, setCurrentView] = useState<string>('home');
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // Selection states
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   
-  // State for booking flow
+  // Flow states
   const [isBooking, setIsBooking] = useState(false);
   const [bookingServiceId, setBookingServiceId] = useState<string | undefined>(undefined);
-
-  // State for chat
   const [activeChatShop, setActiveChatShop] = useState<Shop | null>(null);
 
-  // Simple Router Logic
+  // Clear all selection states
+  const clearSelections = () => {
+    setSelectedService(null);
+    setSelectedShop(null);
+    setSelectedVehicle(null);
+    setSelectedQuote(null);
+    setSelectedBooking(null);
+    setIsBooking(false);
+    setActiveChatShop(null);
+  };
+
+  // Router Logic
   const renderContent = () => {
-    // 1. Chat View Overlay
+    // Onboarding overlay
+    if (showOnboarding) {
+      return (
+        <OnboardingView 
+          onComplete={(role) => {
+            setCurrentRole(role);
+            setShowOnboarding(false);
+            handleNavigate(role === UserRole.SHOP ? 'dashboard' : 'home');
+          }}
+          onSkip={() => setShowOnboarding(false)}
+        />
+      );
+    }
+
+    // Chat View Overlay
     if (activeChatShop) {
       return (
         <ChatView 
@@ -74,7 +112,7 @@ const App: React.FC = () => {
       );
     }
 
-    // 2. Booking Flow Overlay
+    // Booking Flow Overlay
     if (isBooking && selectedShop) {
       return (
         <BookingView 
@@ -89,14 +127,44 @@ const App: React.FC = () => {
       );
     }
 
-    // 3. Details Overlays
+    // Quote Detail Overlay
+    if (selectedQuote) {
+      return (
+        <QuoteDetailView 
+          quote={selectedQuote}
+          onBack={() => setSelectedQuote(null)}
+          onAccept={(quote) => {
+            setSelectedQuote(null);
+            handleNavigate('bookings');
+          }}
+          onReject={() => setSelectedQuote(null)}
+          onCompare={() => {
+            setSelectedQuote(null);
+            handleNavigate('compare');
+          }}
+        />
+      );
+    }
+
+    // Booking/Job Progress Overlay
+    if (selectedBooking) {
+      return (
+        <JobProgressView 
+          booking={selectedBooking}
+          onBack={() => setSelectedBooking(null)}
+          onChat={(shop) => setActiveChatShop(shop)}
+          onViewInvoice={() => handleNavigate('invoice')}
+        />
+      );
+    }
+
+    // Shop Profile Overlay
     if (selectedShop) {
       return (
         <ShopProfile 
           shop={selectedShop} 
           onBack={() => setSelectedShop(null)} 
           onBook={(shop, serviceId) => {
-            // Initiate Booking from Shop Profile
             setSelectedShop(shop);
             setBookingServiceId(serviceId);
             setIsBooking(true);
@@ -106,72 +174,197 @@ const App: React.FC = () => {
       );
     }
 
+    // Service Details Overlay
     if (selectedService) {
-      return <ServiceDetails service={selectedService} onBack={() => setSelectedService(null)} />;
+      return (
+        <ServiceDetails 
+          service={selectedService} 
+          onBack={() => setSelectedService(null)}
+          onCompare={() => {
+            setSelectedService(null);
+            handleNavigate('compare');
+          }}
+          onRequestQuote={() => {
+            setSelectedService(null);
+            handleNavigate('quote-request');
+          }}
+        />
+      );
     }
 
-    // 4. Main Views
+    // Main Views
     switch (currentView) {
       case 'home':
       case 'catalog':
         if (currentRole === UserRole.SHOP) return <ShopDashboard />;
-        return <OwnerHome 
-                  onServiceSelect={(s) => setSelectedService(s)} 
-                  onShopSelect={(s) => setSelectedShop(s)} 
-                />;
+        return (
+          <OwnerHome 
+            onServiceSelect={(s) => setSelectedService(s)} 
+            onShopSelect={(s) => setSelectedShop(s)}
+            onNavigate={handleNavigate}
+          />
+        );
+      
       case 'forum':
-        return <Forum 
-                 currentRole={currentRole} 
-                 onShopSelect={(shop) => {
-                   setSelectedShop(shop);
-                   window.scrollTo(0,0);
-                 }}
-               />;
+        return (
+          <Forum 
+            currentRole={currentRole} 
+            onShopSelect={(shop) => {
+              setSelectedShop(shop);
+              window.scrollTo(0,0);
+            }}
+          />
+        );
+      
       case 'dashboard':
         return <ShopDashboard />;
+      
       case 'profile':
-         // Assuming Owner Profile for now if role is owner
-         if (currentRole === UserRole.OWNER) return <UserProfile />;
-         // Fallback for other roles (simplified)
-         return (
-             <div className="card bg-base-100 shadow p-6">
-                <h2 className="text-2xl font-bold">Profile Settings</h2>
-                <p>Edit your business details and credentials here.</p>
-             </div>
-         );
-      case 'admin':
+        if (currentRole === UserRole.OWNER) return <UserProfile />;
         return (
-            <div className="hero h-96 bg-base-200 rounded-box">
-                <div className="hero-content text-center">
-                    <div className="max-w-md">
-                    <h1 className="text-5xl font-bold">Admin Panel</h1>
-                    <p className="py-6">Manage disputes, verify shops, and view platform analytics here.</p>
-                    <button className="btn btn-primary">Go to Console</button>
-                    </div>
-                </div>
-            </div>
+          <div className="card bg-base-100 shadow p-6">
+            <h2 className="text-2xl font-bold">Profile Settings</h2>
+            <p>Edit your business details and credentials here.</p>
+          </div>
         );
-      case 'bookings':
-          return (
-             <div className="card bg-base-100 shadow p-6">
-                <h2 className="text-2xl font-bold mb-4">My Bookings</h2>
-                <p className="opacity-70">You have no upcoming bookings. Use the search tool to find a mechanic.</p>
-                <div className="mt-4 flex gap-2">
-                   <button className="btn btn-primary btn-sm" onClick={() => handleNavigate('home')}>Find Shops</button>
+      
+      case 'admin':
+        return <AdminConsole onBack={() => handleNavigate('home')} />;
+      
+      case 'vehicles':
+        return (
+          <VehicleProfileView 
+            onBack={() => handleNavigate('home')}
+            onVehicleSelect={(v) => {
+              setSelectedVehicle(v);
+              handleNavigate('quote-request');
+            }}
+          />
+        );
+      
+      case 'compare':
+        return (
+          <CompareShopsView 
+            onBack={() => handleNavigate('home')}
+            onSelectShop={(shop) => setSelectedShop(shop)}
+            onRequestQuote={(shop) => {
+              setSelectedShop(shop);
+              handleNavigate('quote-request');
+            }}
+          />
+        );
+      
+      case 'quote-request':
+        return (
+          <QuoteRequestView 
+            preSelectedVehicle={selectedVehicle || undefined}
+            onBack={() => handleNavigate('home')}
+            onSubmit={(data) => {
+              // After submitting, go to quotes view
+              handleNavigate('quotes');
+            }}
+          />
+        );
+      
+      case 'quotes':
+        // Show list of quotes
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-black uppercase italic tracking-tighter">
+                  My <span className="text-primary">Quotes</span>
+                </h1>
+                <p className="text-slate-400">Compare quotes from shops</p>
+              </div>
+              <button onClick={() => handleNavigate('quote-request')} className="btn btn-primary gap-2">
+                + New Quote Request
+              </button>
+            </div>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {MOCK_QUOTES.map(quote => (
+                <div 
+                  key={quote.id}
+                  onClick={() => setSelectedQuote(quote)}
+                  className="glass-card rounded-2xl p-5 border border-white/5 cursor-pointer hover:border-primary/30 transition-all"
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-bold">{quote.shopName}</h3>
+                      <p className="text-sm text-slate-400">{quote.status}</p>
+                    </div>
+                    <span className={`badge ${quote.guaranteed ? 'badge-success' : 'badge-warning'}`}>
+                      {quote.guaranteed ? 'Guaranteed' : 'Estimate'}
+                    </span>
+                  </div>
+                  <p className="text-2xl font-black text-primary">${quote.estimatedTotal.toFixed(2)}</p>
                 </div>
-             </div>
-          )
+              ))}
+            </div>
+          </div>
+        );
+      
+      case 'bookings':
+        return (
+          <div className="space-y-6">
+            <h1 className="text-3xl font-black uppercase italic tracking-tighter">
+              My <span className="text-primary">Bookings</span>
+            </h1>
+            {MOCK_BOOKINGS.length === 0 ? (
+              <div className="card bg-base-100 shadow p-6">
+                <p className="opacity-70">You have no bookings yet.</p>
+                <button className="btn btn-primary btn-sm mt-4" onClick={() => handleNavigate('home')}>
+                  Find Shops
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {MOCK_BOOKINGS.map(booking => (
+                  <div 
+                    key={booking.id}
+                    onClick={() => setSelectedBooking(booking)}
+                    className="glass-card rounded-2xl p-5 border border-white/5 cursor-pointer hover:border-primary/30 transition-all"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-bold text-lg">{booking.serviceName}</h3>
+                        <p className="text-slate-400">{booking.shopName}</p>
+                        <p className="text-sm text-slate-500 mt-1">{booking.date}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className={`badge ${
+                          booking.status === 'Completed' ? 'badge-success' :
+                          booking.status === 'Confirmed' ? 'badge-primary' :
+                          booking.status === 'In Progress' ? 'badge-warning' : 'badge-ghost'
+                        }`}>
+                          {booking.status}
+                        </span>
+                        <p className="text-lg font-bold mt-2">{booking.price}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      
+      case 'invoice':
+        return (
+          <FinalInvoiceView 
+            onBack={() => handleNavigate('bookings')}
+            onApprove={() => handleNavigate('bookings')}
+            onDispute={() => handleNavigate('bookings')}
+          />
+        );
+      
       default:
         return <div className="p-10 text-center">Page Under Construction</div>;
     }
   };
 
   const handleNavigate = (view: string) => {
-    // Clear selection states when navigating via main menu
-    setSelectedService(null);
-    setSelectedShop(null);
-    setIsBooking(false);
-    setActiveChatShop(null);
+    clearSelections();
     setCurrentView(view);
   };
 
@@ -180,7 +373,6 @@ const App: React.FC = () => {
       currentRole={currentRole} 
       onRoleChange={(role) => {
         setCurrentRole(role);
-        // Reset view to logical home for that role
         if (role === UserRole.SHOP) handleNavigate('dashboard');
         else if (role === UserRole.OWNER) handleNavigate('home');
         else handleNavigate('admin');
