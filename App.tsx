@@ -18,6 +18,7 @@ import { QuoteDetailView } from './views/QuoteDetailView';
 import { JobProgressView } from './views/JobProgressView';
 import { FinalInvoiceView } from './views/FinalInvoiceView';
 import { AdminConsole } from './views/AdminConsole';
+import { ShopProfileSettings } from './views/ShopProfileSettings';
 import { MOCK_SERVICES, MOCK_BOOKINGS, MOCK_QUOTES } from './constants';
 
 // Placeholder view for Service Details
@@ -229,10 +230,12 @@ const App: React.FC = () => {
       
       case 'profile':
         if (currentRole === UserRole.OWNER) return <UserProfile />;
+        if (currentRole === UserRole.SHOP) return <ShopProfileSettings />;
+        // Admin profile - show basic settings
         return (
           <div className="card bg-base-100 shadow p-6">
-            <h2 className="text-2xl font-bold">Profile Settings</h2>
-            <p>Edit your business details and credentials here.</p>
+            <h2 className="text-2xl font-bold">Admin Settings</h2>
+            <p>Manage your admin account settings here.</p>
           </div>
         );
       
