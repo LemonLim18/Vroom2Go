@@ -262,7 +262,7 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
           <div className="text-center py-8 text-slate-400">
             <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p>No service history for this vehicle yet.</p>
-            <button className="btn btn-primary btn-sm mt-4">Book First Service</button>
+            <button onClick={() => onVehicleSelect?.(selectedVehicle)} className="btn btn-primary btn-sm mt-4">Book First Service</button>
           </div>
         </div>
       )}

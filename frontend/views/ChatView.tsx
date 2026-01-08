@@ -98,7 +98,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
             {messages.map((msg) => (
                 <div key={msg.id} className={`chat ${msg.sender === 'user' ? 'chat-end' : 'chat-start'} animate-in fade-in slide-in-from-bottom-2`}>
                     <div className="chat-header text-[10px] font-black uppercase tracking-widest mb-1 text-slate-500">
-                        {msg.sender === 'shop' ? shop.name : 'Rider'}
+                        {msg.sender === 'shop' ? shop.name : 'Vehicle Owner'}
                     </div>
                     <div className={`chat-bubble rounded-2xl p-4 shadow-xl border ${msg.sender === 'user' ? 'bg-primary text-black font-bold border-primary shadow-primary/10' : 'bg-slate-800 text-white border-white/5 shadow-black/40'}`}>
                         {msg.text}

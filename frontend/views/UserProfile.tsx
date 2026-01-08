@@ -64,7 +64,18 @@ const SERVICE_HISTORY: ServiceHistoryItem[] = [
 
 export const UserProfile: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ProfileTab>('vehicles');
-  const user = MOCK_USERS[0]; // First user as current user
+  const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
+  const [showEditVehicleModal, setShowEditVehicleModal] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Show toast notification
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Get first owner user for profile display
+  const user = MOCK_USERS.find(u => u.role === 'OWNER') || MOCK_USERS[0];
 
   const tabs = [
     { id: 'vehicles' as const, label: 'My Garage', icon: Car },
@@ -122,7 +133,7 @@ export const UserProfile: React.FC = () => {
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">My Vehicles</h2>
-              <button className="btn btn-primary btn-sm gap-1">
+              <button onClick={() => setShowAddVehicleModal(true)} className="btn btn-primary btn-sm gap-1">
                 <Plus className="w-4 h-4" /> Add Vehicle
               </button>
             </div>
@@ -144,8 +155,8 @@ export const UserProfile: React.FC = () => {
                       <p className="text-sm text-slate-300 mt-1">{vehicle.mileage.toLocaleString()} miles</p>
                     )}
                     <div className="flex gap-2 mt-3">
-                      <button className="btn btn-xs btn-ghost gap-1"><Edit className="w-3 h-3" /> Edit</button>
-                      <button className="btn btn-xs btn-ghost text-error gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
+                      <button onClick={() => setShowEditVehicleModal(true)} className="btn btn-xs btn-ghost gap-1"><Edit className="w-3 h-3" /> Edit</button>
+                      <button onClick={() => showToast(`${vehicle.year} ${vehicle.make} ${vehicle.model} removed`)} className="btn btn-xs btn-ghost text-error gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
                     </div>
                   </div>
                 </div>
@@ -360,7 +371,7 @@ export const UserProfile: React.FC = () => {
                   <label className="label"><span className="label-text">Phone</span></label>
                   <input type="tel" defaultValue="+1 (555) 123-4567" className="input input-bordered bg-slate-800 border-white/10" />
                 </div>
-                <button className="btn btn-primary">Save Changes</button>
+                <button onClick={() => showToast('Profile updated successfully!')} className="btn btn-primary">Save Changes</button>
               </div>
             </div>
 
@@ -424,9 +435,76 @@ export const UserProfile: React.FC = () => {
             {/* Danger Zone */}
             <div className="glass-card rounded-2xl p-5 border border-red-500/20 bg-red-500/5">
               <h3 className="font-bold mb-4 text-red-400">Danger Zone</h3>
-              <button className="btn btn-outline btn-error btn-sm w-full gap-2">
+              <button onClick={() => showToast('Signed out successfully')} className="btn btn-outline btn-error btn-sm w-full gap-2">
                 <LogOut className="w-4 h-4" /> Sign Out
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="toast toast-end toast-bottom z-50">
+          <div className="alert alert-success">
+            <CheckCircle className="w-5 h-5" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Add Vehicle Modal */}
+      {showAddVehicleModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-4">Add New Vehicle</h2>
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label"><span className="label-text">VIN Number</span></label>
+                <input type="text" placeholder="Enter 17-digit VIN" className="input input-bordered bg-slate-800 border-white/10 font-mono" />
+              </div>
+              <div className="text-center text-slate-400 text-sm">OR</div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Year</span></label>
+                  <input type="number" placeholder="2024" className="input input-bordered bg-slate-800 border-white/10" />
+                </div>
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Make</span></label>
+                  <input type="text" placeholder="Honda" className="input input-bordered bg-slate-800 border-white/10" />
+                </div>
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Model</span></label>
+                  <input type="text" placeholder="Civic" className="input input-bordered bg-slate-800 border-white/10" />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowAddVehicleModal(false)} className="btn btn-ghost flex-1">Cancel</button>
+              <button onClick={() => { showToast('Vehicle added successfully!'); setShowAddVehicleModal(false); }} className="btn btn-primary flex-1">Add Vehicle</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Vehicle Modal */}
+      {showEditVehicleModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-4">Edit Vehicle</h2>
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label"><span className="label-text">Nickname</span></label>
+                <input type="text" placeholder="My Daily Driver" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Current Mileage</span></label>
+                <input type="number" placeholder="45000" className="input input-bordered bg-slate-800 border-white/10" />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowEditVehicleModal(false)} className="btn btn-ghost flex-1">Cancel</button>
+              <button onClick={() => { showToast('Vehicle updated successfully!'); setShowEditVehicleModal(false); }} className="btn btn-primary flex-1">Save Changes</button>
             </div>
           </div>
         </div>

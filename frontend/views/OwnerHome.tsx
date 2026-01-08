@@ -90,7 +90,7 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <button className="btn btn-primary rounded-xl px-8 uppercase font-black italic">Go</button>
+              <button onClick={() => onNavigate?.('catalog')} className="btn btn-primary rounded-xl px-8 uppercase font-black italic">Go</button>
             </div>
           </div>
         </div>
@@ -263,7 +263,7 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
              <h2 className="text-3xl font-black uppercase italic tracking-tighter">Essential Maintenance</h2>
              <p className="text-slate-500 font-medium">Top booked services this week</p>
            </div>
-           <button className="btn btn-link btn-sm text-primary no-underline hover:underline font-bold">See All</button>
+           <button onClick={() => onNavigate?.('catalog')} className="btn btn-link btn-sm text-primary no-underline hover:underline font-bold">See All</button>
         </div>
         
         <div className="grid md:grid-cols-3 gap-6">
@@ -343,7 +343,7 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
                     <span className="badge badge-ghost badge-sm">{shop.warrantyDays}d warranty</span>
                   )}
                 </div>
-                <button className="btn btn-sm btn-outline border-slate-700 text-slate-300 hover:bg-primary hover:text-black hover:border-primary w-full rounded-xl uppercase font-bold italic">Details</button>
+                <button onClick={(e) => { e.stopPropagation(); onShopSelect(shop); }} className="btn btn-sm btn-outline border-slate-700 text-slate-300 hover:bg-primary hover:text-black hover:border-primary w-full rounded-xl uppercase font-bold italic">Details</button>
               </div>
             </div>
           ))}

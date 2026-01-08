@@ -54,9 +54,16 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [selectedCardId, setSelectedCardId] = useState<string>(SAVED_CARDS[0].id);
   const [showAddCard, setShowAddCard] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // Show toast notification
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const selectedService = MOCK_SERVICES.find(s => s.id === selectedServiceId);
   const basePriceString = shop.customPrices[selectedServiceId] || '0';
@@ -281,7 +288,7 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                           <input className="input input-sm bg-slate-700 border-white/10" placeholder="MM/YY" />
                           <input className="input input-sm bg-slate-700 border-white/10" placeholder="CVC" />
                         </div>
-                        <button className="btn btn-primary btn-sm w-full">Save Card</button>
+                        <button onClick={() => { showToast('Card saved successfully!'); setShowAddCard(false); }} className="btn btn-primary btn-sm w-full">Save Card</button>
                       </div>
                     )}
                   </div>
@@ -387,6 +394,16 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
           </div>
         </div>
       </div>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="toast toast-end toast-bottom z-50">
+          <div className="alert alert-success">
+            <CheckCircle className="w-5 h-5" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

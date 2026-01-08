@@ -316,7 +316,7 @@ export const ShopProfileSettings: React.FC = () => {
                 </div>
               </div>
               {!shop.verified && (
-                <button className="btn btn-warning btn-sm w-full">Complete Verification</button>
+                <button onClick={() => showToast('Verification request submitted!')} className="btn btn-warning btn-sm w-full">Complete Verification</button>
               )}
             </div>
 
@@ -340,7 +340,7 @@ export const ShopProfileSettings: React.FC = () => {
                   BBB Accredited
                 </div>
               </div>
-              <button className="btn btn-ghost btn-sm w-full mt-4 gap-1">
+              <button onClick={() => showToast('Now you can add a new certification')} className="btn btn-ghost btn-sm w-full mt-4 gap-1">
                 <Plus className="w-4 h-4" /> Add Certification
               </button>
             </div>
@@ -561,7 +561,7 @@ export const ShopProfileSettings: React.FC = () => {
                     </div>
                     <span>Chase •••• 4589</span>
                     <span className="badge badge-success badge-xs">Default</span>
-                    <button className="btn btn-ghost btn-xs ml-auto">Change</button>
+                    <button onClick={() => showToast('Bank account updated!')} className="btn btn-ghost btn-xs ml-auto">Change</button>
                   </div>
                 </div>
                 <div className="form-control">
@@ -605,10 +605,10 @@ export const ShopProfileSettings: React.FC = () => {
             <div className="glass-card rounded-2xl p-5 border border-red-500/20 bg-red-500/5">
               <h3 className="font-bold mb-4 text-red-400">Danger Zone</h3>
               <div className="space-y-3">
-                <button className="btn btn-outline btn-sm w-full text-slate-400 hover:text-white">
+                <button onClick={() => showToast('Shop listing paused')} className="btn btn-outline btn-sm w-full text-slate-400 hover:text-white">
                   Pause Shop Listing
                 </button>
-                <button className="btn btn-outline btn-error btn-sm w-full">
+                <button onClick={() => showToast('Account deletion request submitted')} className="btn btn-outline btn-error btn-sm w-full">
                   Delete Account
                 </button>
               </div>

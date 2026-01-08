@@ -67,6 +67,30 @@ const MOCK_DISPUTES = [
 export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [searchTerm, setSearchTerm] = useState('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [contactMessage, setContactMessage] = useState('');
+  const [contactRecipients, setContactRecipients] = useState({ user: true, shop: true });
+
+  // Show toast notification
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Handle send contact message
+  const handleSendContactMessage = () => {
+    const recipients = [];
+    if (contactRecipients.user) recipients.push('Vehicle Owner');
+    if (contactRecipients.shop) recipients.push('Shop');
+    showToast(`Message sent to ${recipients.join(' and ')}`);
+    setShowContactModal(false);
+    setContactMessage('');
+  };
 
   const stats = {
     totalUsers: MOCK_USERS.length,
@@ -267,13 +291,13 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                   </div>
 
                   <div className="flex gap-2">
-                    <button className="btn btn-sm btn-ghost gap-1">
+                    <button onClick={() => { setSelectedItem(shop); setShowReviewModal(true); }} className="btn btn-sm btn-ghost gap-1">
                       <Eye className="w-4 h-4" /> Review Documents
                     </button>
-                    <button className="btn btn-sm btn-success gap-1">
+                    <button onClick={() => showToast(`${shop.name} has been approved!`)} className="btn btn-sm btn-success gap-1">
                       <CheckCircle className="w-4 h-4" /> Approve
                     </button>
-                    <button className="btn btn-sm btn-error gap-1">
+                    <button onClick={() => showToast(`${shop.name} has been rejected`)} className="btn btn-sm btn-error gap-1">
                       <XCircle className="w-4 h-4" /> Reject
                     </button>
                   </div>
@@ -337,13 +361,13 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                   </div>
 
                   <div className="flex gap-2">
-                    <button className="btn btn-sm btn-ghost gap-1">
+                    <button onClick={() => { setSelectedItem(dispute); setShowDisputeModal(true); }} className="btn btn-sm btn-ghost gap-1">
                       <Eye className="w-4 h-4" /> View Details
                     </button>
-                    <button className="btn btn-sm btn-outline gap-1">
+                    <button onClick={() => { setSelectedItem(dispute); setShowContactModal(true); }} className="btn btn-sm btn-outline gap-1">
                       <MessageSquare className="w-4 h-4" /> Contact Parties
                     </button>
-                    <button className="btn btn-sm btn-success gap-1">
+                    <button onClick={() => showToast(`Dispute #${dispute.id.toUpperCase()} resolved`)} className="btn btn-sm btn-success gap-1">
                       <CheckCircle className="w-4 h-4" /> Resolve
                     </button>
                   </div>
@@ -409,14 +433,180 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                     </td>
                     <td>
                       <div className="flex gap-1">
-                        <button className="btn btn-ghost btn-xs"><Eye className="w-3 h-3" /></button>
-                        <button className="btn btn-ghost btn-xs text-error"><Ban className="w-3 h-3" /></button>
+                        <button onClick={() => { setSelectedItem(user); setShowUserModal(true); }} className="btn btn-ghost btn-xs"><Eye className="w-3 h-3" /></button>
+                        <button onClick={() => showToast(`${user.name} has been banned`)} className="btn btn-ghost btn-xs text-error"><Ban className="w-3 h-3" /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="toast toast-end toast-bottom z-50">
+          <div className="alert alert-success">
+            <CheckCircle className="w-5 h-5" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Review Documents Modal */}
+      {showReviewModal && selectedItem && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-2">Review Documents</h2>
+            <p className="text-slate-400 mb-4">{selectedItem.name}</p>
+            <div className="space-y-3 mb-6">
+              {selectedItem.documents?.map((doc: string, idx: number) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span>{doc}</span>
+                  </div>
+                  <button onClick={() => showToast(`${doc} downloaded`)} className="btn btn-ghost btn-xs">Download</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowReviewModal(false)} className="btn btn-ghost flex-1">Close</button>
+              <button onClick={() => { showToast(`${selectedItem.name} has been approved!`); setShowReviewModal(false); }} className="btn btn-success flex-1">Approve</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Details Modal */}
+      {showUserModal && selectedItem && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-4">User Details</h2>
+            <div className="space-y-3 mb-6">
+              <div className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-xl">
+                {selectedItem.avatar && <img src={selectedItem.avatar} alt="" className="w-12 h-12 rounded-full" />}
+                <div>
+                  <p className="font-bold">{selectedItem.name}</p>
+                  <p className="text-sm text-slate-400">{selectedItem.email}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="p-3 bg-slate-800/50 rounded-xl">
+                  <p className="text-slate-500">Role</p>
+                  <p className="font-medium">{selectedItem.role}</p>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-xl">
+                  <p className="text-slate-500">Joined</p>
+                  <p className="font-medium">{new Date(selectedItem.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowUserModal(false)} className="btn btn-ghost flex-1">Close</button>
+              <button onClick={() => { showToast(`Message sent to ${selectedItem.name}`); setShowUserModal(false); }} className="btn btn-primary flex-1">Contact User</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dispute Details Modal */}
+      {showDisputeModal && selectedItem && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-2">Dispute Details</h2>
+            <p className="text-red-400 mb-4">#{selectedItem.id?.toUpperCase()}</p>
+            <div className="space-y-3 mb-6">
+              <div className="p-4 bg-slate-800/50 rounded-xl">
+                <p className="text-slate-500 text-sm mb-1">Reason</p>
+                <p>{selectedItem.reason}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="p-3 bg-slate-800/50 rounded-xl">
+                  <p className="text-slate-500">User ID</p>
+                  <p className="font-medium">{selectedItem.userId}</p>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-xl">
+                  <p className="text-slate-500">Status</p>
+                  <p className="font-medium capitalize">{selectedItem.status}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDisputeModal(false)} className="btn btn-ghost flex-1">Close</button>
+              <button onClick={() => { showToast(`Dispute #${selectedItem.id?.toUpperCase()} resolved`); setShowDisputeModal(false); }} className="btn btn-success flex-1">Resolve</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Parties Modal */}
+      {showContactModal && selectedItem && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-lg w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-2">Contact Parties</h2>
+            <p className="text-slate-400 mb-4">Dispute #{selectedItem.id?.toUpperCase()}</p>
+            
+            {/* Dispute Summary */}
+            <div className="p-4 bg-slate-800/50 rounded-xl mb-4">
+              <p className="text-sm text-slate-400 mb-2">Issue:</p>
+              <p className="text-sm">{selectedItem.reason}</p>
+            </div>
+            
+            {/* Recipients */}
+            <div className="mb-4">
+              <p className="font-medium mb-3">Send message to:</p>
+              <div className="flex gap-4">
+                <label className="cursor-pointer label justify-start gap-2 p-3 bg-slate-800/50 rounded-xl flex-1">
+                  <input 
+                    type="checkbox" 
+                    className="checkbox checkbox-primary checkbox-sm" 
+                    checked={contactRecipients.user}
+                    onChange={(e) => setContactRecipients(prev => ({ ...prev, user: e.target.checked }))}
+                  />
+                  <div>
+                    <p className="font-medium text-sm">Vehicle Owner</p>
+                    <p className="text-xs text-slate-500">User #{selectedItem.userId}</p>
+                  </div>
+                </label>
+                <label className="cursor-pointer label justify-start gap-2 p-3 bg-slate-800/50 rounded-xl flex-1">
+                  <input 
+                    type="checkbox" 
+                    className="checkbox checkbox-primary checkbox-sm" 
+                    checked={contactRecipients.shop}
+                    onChange={(e) => setContactRecipients(prev => ({ ...prev, shop: e.target.checked }))}
+                  />
+                  <div>
+                    <p className="font-medium text-sm">Mechanic Shop</p>
+                    <p className="text-xs text-slate-500">{MOCK_SHOPS.find(s => s.id === selectedItem.shopId)?.name}</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+            
+            {/* Message */}
+            <div className="form-control mb-6">
+              <label className="label"><span className="label-text">Your Message</span></label>
+              <textarea 
+                placeholder="Type your message to the involved parties..."
+                value={contactMessage}
+                onChange={(e) => setContactMessage(e.target.value)}
+                className="textarea textarea-bordered bg-slate-800 border-white/10 h-28"
+              />
+            </div>
+            
+            <div className="flex gap-3">
+              <button onClick={() => { setShowContactModal(false); setContactMessage(''); }} className="btn btn-ghost flex-1">Cancel</button>
+              <button 
+                onClick={handleSendContactMessage}
+                disabled={!contactMessage.trim() || (!contactRecipients.user && !contactRecipients.shop)}
+                className="btn btn-primary flex-1 gap-2"
+              >
+                <MessageSquare className="w-4 h-4" /> Send Message
+              </button>
+            </div>
           </div>
         </div>
       )}

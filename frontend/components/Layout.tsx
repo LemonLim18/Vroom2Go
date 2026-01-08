@@ -22,7 +22,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
     { id: 'admin', label: 'HQ', icon: ShieldCheck, roles: [UserRole.ADMIN] },
     { id: 'bookings', label: 'Pit Stop', icon: Calendar, roles: [UserRole.OWNER, UserRole.SHOP] },
     { id: 'forum', label: 'Paddock', icon: MessageSquare, roles: [UserRole.OWNER, UserRole.SHOP] },
-    { id: 'profile', label: 'Rider', icon: User, roles: [UserRole.OWNER, UserRole.SHOP, UserRole.ADMIN] },
+    { id: 'profile', label: 'Profile', icon: User, roles: [UserRole.OWNER, UserRole.SHOP, UserRole.ADMIN] },
   ];
 
   const filteredNav = navItems.filter(item => item.roles.includes(currentRole));
