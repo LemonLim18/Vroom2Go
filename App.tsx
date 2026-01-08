@@ -8,6 +8,7 @@ import { ShopProfile } from './views/ShopProfile';
 import { BookingView } from './views/BookingView';
 import { UserProfile } from './views/UserProfile';
 import { ChatView } from './views/ChatView';
+import { ServicesPage } from './views/ServicesPage';
 // New Phase 2 Views
 import { OnboardingView } from './views/OnboardingView';
 import { VehicleProfileView } from './views/VehicleProfileView';
@@ -195,13 +196,20 @@ const App: React.FC = () => {
     // Main Views
     switch (currentView) {
       case 'home':
-      case 'catalog':
         if (currentRole === UserRole.SHOP) return <ShopDashboard />;
         return (
           <OwnerHome 
             onServiceSelect={(s) => setSelectedService(s)} 
             onShopSelect={(s) => setSelectedShop(s)}
             onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'catalog':
+        return (
+          <ServicesPage 
+            onServiceSelect={(s) => setSelectedService(s)} 
+            onShopSelect={(s) => setSelectedShop(s)}
           />
         );
       
@@ -379,6 +387,7 @@ const App: React.FC = () => {
       }}
       currentView={currentView}
       onNavigate={handleNavigate}
+      onOpenChat={(shop) => setActiveChatShop(shop)}
     >
       {renderContent()}
     </Layout>

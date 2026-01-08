@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { UserRole } from '../types';
+import { UserRole, Shop } from '../types';
 import { Home, Search, Calendar, MessageSquare, User, ShieldCheck, Wrench, Menu, X, ChevronDown } from 'lucide-react';
+import { FloatingChat } from './FloatingChat';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -8,9 +9,10 @@ interface LayoutProps {
   onRoleChange: (role: UserRole) => void;
   currentView: string;
   onNavigate: (view: string) => void;
+  onOpenChat?: (shop: Shop) => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleChange, currentView, onNavigate }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleChange, currentView, onNavigate, onOpenChat }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navItems = [
@@ -83,11 +85,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-8">
-        <div className="max-w-6xl mx-auto h-full">
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-20">
+        <div className="max-w-6xl mx-auto pb-12">
            {children}
         </div>
       </main>
+
+      {/* Floating Chat Widget */}
+      {currentRole !== UserRole.ADMIN && onOpenChat && (
+        <FloatingChat onOpenChat={onOpenChat} />
+      )}
     </div>
   );
 };

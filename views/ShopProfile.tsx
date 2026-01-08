@@ -1,7 +1,24 @@
-import React from 'react';
-import { Shop, Service } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Shop, Service, ServiceCategory } from '../types';
 import { MOCK_SERVICES } from '../constants';
-import { ShieldCheck, Star, MapPin, Clock, CheckCircle, MessageCircle, ChevronRight, Share2, Heart } from 'lucide-react';
+import { 
+  ShieldCheck, 
+  Star, 
+  MapPin, 
+  Clock, 
+  CheckCircle, 
+  MessageCircle, 
+  ChevronRight, 
+  Share2, 
+  Heart,
+  Wrench,
+  Settings,
+  Stethoscope,
+  Navigation,
+  ExternalLink,
+  Award,
+  Phone
+} from 'lucide-react';
 
 interface ShopProfileProps {
   shop: Shop;
@@ -10,11 +27,59 @@ interface ShopProfileProps {
   onMessage: (shop: Shop) => void;
 }
 
+const CATEGORY_ICONS: Record<string, React.ElementType> = {
+  [ServiceCategory.MAINTENANCE]: Wrench,
+  [ServiceCategory.REPAIR]: Settings,
+  [ServiceCategory.DIAGNOSTIC]: Stethoscope,
+};
+
 export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, onMessage }) => {
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
   const getServiceDetails = (id: string) => MOCK_SERVICES.find(s => s.id === id);
 
+  // Group services by category
+  const servicesByCategory = useMemo(() => {
+    const grouped: Record<string, { service: Service; price: string }[]> = {};
+    shop.services.forEach(serviceId => {
+      const service = getServiceDetails(serviceId);
+      if (service) {
+        if (!grouped[service.category]) {
+          grouped[service.category] = [];
+        }
+        grouped[service.category].push({
+          service,
+          price: shop.customPrices[serviceId] || 'Quote'
+        });
+      }
+    });
+    return grouped;
+  }, [shop.services, shop.customPrices]);
+
+  const categories = Object.keys(servicesByCategory);
+
+  // Set default active category
+  React.useEffect(() => {
+    if (categories.length > 0 && !activeCategory) {
+      setActiveCategory(categories[0]);
+    }
+  }, [categories, activeCategory]);
+
+  // Create Google Maps embed URL from address
+  const getMapEmbedUrl = (address: string) => {
+    const encodedAddress = encodeURIComponent(address);
+    return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${encodedAddress}&zoom=15`;
+  };
+
+  // Google Maps directions URL
+  const getDirectionsUrl = (address: string) => {
+    const encodedAddress = encodeURIComponent(address);
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}`;
+  };
+
   return (
-    <div className="animate-in fade-in duration-500 slide-in-from-bottom-4 space-y-6">
+    <div className="animate-in fade-in duration-500 slide-in-from-bottom-4 space-y-8">
+      {/* Back Button */}
       <div className="flex justify-between items-center">
         <button onClick={onBack} className="btn btn-sm btn-ghost gap-2 text-slate-400 hover:text-white uppercase font-black italic tracking-tighter">
           ← Back to Circuit
@@ -66,106 +131,146 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-          {/* About Section */}
+        {/* Main Content - About, Services, Reviews */}
+        <div className="lg:col-span-2 space-y-10">
+          
+          {/* ============ ABOUT SECTION ============ */}
           <section>
-            <h2 className="text-2xl font-black italic uppercase tracking-tighter mb-4 flex items-center gap-2">
-              <ChevronRight className="w-6 h-6 text-primary" /> The Crew Bio
+            <h2 className="text-2xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2">
+              <ChevronRight className="w-6 h-6 text-primary" /> About This Shop
             </h2>
-            <div className="glass-card rounded-3xl p-8 border border-white/5 leading-relaxed text-slate-300 font-medium">
-              {shop.description}
-              <div className="grid grid-cols-2 gap-4 mt-8">
-                <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
-                   <div className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">Status</div>
-                   <div className="flex items-center gap-2 font-bold italic"><Clock className="w-4 h-4" /> 08:00 - 18:00</div>
+            
+            <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-6">
+              <p className="text-slate-300 leading-relaxed">{shop.description}</p>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="bg-slate-800/50 rounded-xl p-4 border border-white/5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <Clock className="w-5 h-5 text-primary" />
+                    <span className="font-bold">Business Hours</span>
+                  </div>
+                  <div className="space-y-1 text-sm text-slate-400">
+                    <div className="flex justify-between"><span>Mon - Fri</span><span className="text-white">8:00 AM - 6:00 PM</span></div>
+                    <div className="flex justify-between"><span>Saturday</span><span className="text-white">9:00 AM - 4:00 PM</span></div>
+                    <div className="flex justify-between"><span>Sunday</span><span className="text-slate-500">Closed</span></div>
+                  </div>
                 </div>
-                <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
-                   <div className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">Certification</div>
-                   <div className="flex items-center gap-2 font-bold italic"><CheckCircle className="w-4 h-4" /> ASE MASTER TECH</div>
+
+                <div className="bg-slate-800/50 rounded-xl p-4 border border-white/5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <Award className="w-5 h-5 text-primary" />
+                    <span className="font-bold">Certifications</span>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-400" /> ASE Master Technician</div>
+                    <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-400" /> EPA Certified</div>
+                    <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-400" /> BBB Accredited</div>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
 
-          {/* Service Menu */}
+          {/* ============ SERVICES SECTION ============ */}
           <section>
-            <h2 className="text-2xl font-black italic uppercase tracking-tighter mb-4 flex items-center gap-2">
+            <h2 className="text-2xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2">
               <ChevronRight className="w-6 h-6 text-primary" /> Service Menu
+              <span className="badge badge-primary badge-sm ml-2">{shop.services.length}</span>
             </h2>
-            <div className="glass-card rounded-3xl overflow-hidden border border-white/5">
-              <div className="overflow-x-auto">
-                <table className="table">
-                  <thead className="bg-slate-800/50 border-b border-white/5">
-                    <tr className="text-slate-500 uppercase italic font-black text-xs tracking-widest">
-                      <th className="py-4">Tune Up</th>
-                      <th>Flat Rate</th>
-                      <th className="text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {shop.services.map(serviceId => {
-                      const service = getServiceDetails(serviceId);
-                      const price = shop.customPrices[serviceId];
-                      if (!service) return null;
-                      return (
-                        <tr key={serviceId} className="hover:bg-primary/5 transition-colors group">
-                          <td className="py-6">
-                            <div className="font-black italic uppercase tracking-tighter text-lg">{service.name}</div>
-                            <div className="text-xs text-slate-500 font-bold uppercase mt-1">{service.category}</div>
-                          </td>
-                          <td>
-                            <div className="text-xl font-black italic text-primary">{price}</div>
-                          </td>
-                          <td className="text-right">
-                             <button 
-                                className="btn btn-sm btn-ghost group-hover:bg-primary group-hover:text-black font-black italic uppercase rounded-xl"
-                                onClick={() => onBook(shop, serviceId)}
-                             >
-                                Reserve
-                             </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+
+            {/* Category Tabs */}
+            <div className="tabs tabs-boxed bg-slate-800/50 p-1 mb-6 w-fit">
+              {categories.map(cat => {
+                const Icon = CATEGORY_ICONS[cat] || Wrench;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`tab gap-2 ${activeCategory === cat ? 'tab-active bg-primary text-black' : ''}`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {cat}
+                    <span className={`badge badge-xs ${activeCategory === cat ? 'bg-black/20' : 'badge-ghost'}`}>
+                      {servicesByCategory[cat].length}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Services for Active Category */}
+            {activeCategory && servicesByCategory[activeCategory] && (
+              <div className="glass-card rounded-2xl border border-white/5 overflow-hidden animate-fade-in">
+                <div className="divide-y divide-white/5">
+                  {servicesByCategory[activeCategory].map(({ service, price }) => (
+                    <div 
+                      key={service.id} 
+                      className="px-6 py-5 flex items-center justify-between hover:bg-primary/5 transition-colors group"
+                    >
+                      <div className="flex-1">
+                        <h4 className="font-bold text-lg">{service.name}</h4>
+                        <p className="text-sm text-slate-400 line-clamp-1">{service.description}</p>
+                        {service.duration && (
+                          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> Est. {service.duration}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="text-2xl font-black text-primary">{price}</span>
+                        <button 
+                          onClick={() => onBook(shop, service.id)}
+                          className="btn btn-sm btn-ghost group-hover:btn-primary font-bold"
+                        >
+                          Book Now
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
-          {/* Reviews */}
+          {/* ============ REVIEWS SECTION ============ */}
           <section>
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black italic uppercase tracking-tighter flex items-center gap-2">
-                <ChevronRight className="w-6 h-6 text-primary" /> Rider Feedback
+                <ChevronRight className="w-6 h-6 text-primary" /> Customer Reviews
+                <span className="badge badge-primary badge-sm ml-2">{shop.reviews.length}</span>
               </h2>
-              <button className="btn btn-ghost btn-sm text-primary font-bold uppercase italic">View All</button>
+              <select className="select select-sm bg-slate-800 border-white/10">
+                <option>Most Recent</option>
+                <option>Highest Rated</option>
+                <option>Lowest Rated</option>
+              </select>
             </div>
+
             <div className="space-y-4">
               {shop.reviews.map((review) => (
                 <div key={review.id} className="glass-card rounded-2xl p-6 border border-white/5 hover:border-white/10 transition-all">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
                       <div className="avatar placeholder">
-                        <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-10 font-black">
+                        <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-12 font-black">
                           <span>{review.author.charAt(0)}</span>
                         </div>
                       </div>
                       <div>
-                        <div className="font-black italic uppercase tracking-tighter text-sm">{review.author}</div>
-                        <div className="text-[10px] text-slate-500 font-bold">{review.date}</div>
+                        <div className="font-bold">{review.author}</div>
+                        <div className="text-xs text-slate-500">{review.date}</div>
                       </div>
                     </div>
                     <div className="flex text-primary">
                        {[...Array(5)].map((_, i) => (
-                         <Star key={i} className={`w-3 h-3 ${i < review.rating ? 'fill-current' : 'text-slate-700'}`} />
+                         <Star key={i} className={`w-4 h-4 ${i < review.rating ? 'fill-current' : 'text-slate-700'}`} />
                        ))}
                     </div>
                   </div>
-                  <p className="text-slate-300 font-medium italic">"{review.comment}"</p>
+                  <p className="text-slate-300">"{review.comment}"</p>
                   {review.serviceName && (
-                    <div className="mt-4 inline-flex items-center gap-1 bg-slate-800 px-2 py-1 rounded text-[10px] font-bold text-slate-500 uppercase tracking-widest border border-white/5">
-                      Verified {review.serviceName}
+                    <div className="mt-4 inline-flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full text-xs font-bold text-slate-400 border border-white/5">
+                      <CheckCircle className="w-3 h-3 text-green-400" /> Verified: {review.serviceName}
                     </div>
                   )}
                 </div>
@@ -174,32 +279,56 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
           </section>
         </div>
 
-        {/* Location Sidebar */}
+        {/* ============ SIDEBAR ============ */}
         <div className="space-y-6">
            <div className="glass-card rounded-3xl p-6 border border-white/5 sticky top-24">
               <h3 className="text-lg font-black italic uppercase tracking-tighter mb-4 flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-primary" /> Map Coordinate
+                <MapPin className="w-5 h-5 text-primary" /> Location
               </h3>
-              <div className="w-full h-48 bg-slate-800 rounded-2xl flex items-center justify-center relative overflow-hidden group mb-4">
-                 <div className="absolute inset-0 opacity-20 bg-[url('https://www.google.com/maps/vt/pb=!1m4!1m3!1i12!2i1024!3i2048!2m3!1e0!2sm!3i345013117!3m8!2sen!3sus!5e1105!12m4!1e68!2m2!1sset!2sRoadmap!4e0')] bg-center bg-cover"></div>
-                 <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center animate-bounce shadow-[0_0_20px_#FACC15] relative z-10">
-                    <MapPin className="w-6 h-6 text-black" />
-                 </div>
+              
+              {/* Embedded Google Map */}
+              <div className="w-full h-48 rounded-2xl overflow-hidden mb-4 border border-white/10">
+                <iframe
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0 }}
+                  loading="lazy"
+                  allowFullScreen
+                  referrerPolicy="no-referrer-when-downgrade"
+                  src={getMapEmbedUrl(shop.address)}
+                  title={`Map showing ${shop.name} location`}
+                ></iframe>
               </div>
-              <div className="text-sm space-y-2 mb-6">
-                <p className="font-black italic text-white uppercase tracking-tighter">{shop.address}</p>
-                <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">HQ: SPRINGFIELD, IL 62704</p>
+
+              <div className="text-sm space-y-2 mb-4">
+                <p className="font-bold text-white">{shop.address}</p>
+                <p className="text-slate-400 flex items-center gap-1">
+                  <Navigation className="w-3 h-3" /> {shop.distance} from your location
+                </p>
               </div>
-              <button className="btn btn-outline border-slate-700 text-white hover:bg-white hover:text-black w-full rounded-xl uppercase font-black italic tracking-tighter">
+              
+              <a 
+                href={getDirectionsUrl(shop.address)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-outline border-slate-700 text-white hover:bg-primary hover:text-black w-full rounded-xl gap-2 mb-3"
+              >
+                <Navigation className="w-4 h-4" />
                 Get Directions
+                <ExternalLink className="w-3 h-3" />
+              </a>
+
+              <button className="btn btn-ghost w-full rounded-xl gap-2 text-slate-400 hover:text-white">
+                <Phone className="w-4 h-4" />
+                Call Shop
               </button>
               
-              <div className="mt-8 p-6 bg-primary rounded-2xl text-black shadow-lg shadow-primary/20">
+              <div className="mt-6 p-5 bg-primary rounded-2xl text-black">
                 <h3 className="font-black italic uppercase tracking-tighter mb-2">Vroom Guarantee</h3>
-                <ul className="space-y-2 text-xs font-bold uppercase italic">
+                <ul className="space-y-2 text-xs font-bold">
                   <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Locked Pricing</li>
-                  <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> 12mo Performance Warranty</li>
-                  <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Direct Rider Chat</li>
+                  <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> 12mo Warranty</li>
+                  <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Secure Payments</li>
                 </ul>
               </div>
            </div>
