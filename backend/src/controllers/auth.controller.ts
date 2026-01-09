@@ -116,3 +116,23 @@ export const getMe = async (req: any, res: Response) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+// @desc    Request password reset
+// @route   POST /api/auth/forgot-password
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    
+    // Simulate lookup delay
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // We don't reveal if user exists for security, but we'll log it for 'dev' purposes
+    const user = await prisma.user.findUnique({ where: { email } });
+    console.log(`[Forgot Password] Request for ${email}. Exists: ${!!user}`);
+
+    res.json({ message: 'If an account exists, a reset link has been sent.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

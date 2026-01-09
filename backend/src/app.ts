@@ -10,7 +10,8 @@ import shopRoutes from './routes/shop.routes';
 import serviceRoutes from './routes/service.routes';
 import bookingRoutes from './routes/booking.routes';
 import vehicleRoutes from './routes/vehicle.routes';
-// import shopRoutes from './routes/shop.routes';
+import conversationRoutes from './routes/conversation.routes';
+import forumRoutes from './routes/forum.routes';
 
 const app: Application = express();
 
@@ -46,6 +47,8 @@ app.use('/api/shops', shopRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/forum', forumRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

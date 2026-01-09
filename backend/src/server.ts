@@ -4,6 +4,8 @@ import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 
+import { initSocket } from './socket';
+
 // Load env vars
 dotenv.config();
 
@@ -14,27 +16,9 @@ const prisma = new PrismaClient();
 const server = http.createServer(app);
 
 // Initialize Socket.io
-export const io = new Server(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-  }
-});
+export const io = initSocket(server);
 
-// Socket.io connection handling
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-
-  socket.on('join_room', (roomId) => {
-    socket.join(roomId);
-    console.log(`User ${socket.id} joined room ${roomId}`);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-  });
-});
+// Connect to database and start server
 
 // Connect to database and start server
 async function startServer() {

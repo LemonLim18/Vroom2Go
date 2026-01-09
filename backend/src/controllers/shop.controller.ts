@@ -116,3 +116,36 @@ export const updateShopProfile = async (req: any, res: Response) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+/**
+ * @desc    Get current user's shop profile
+ * @route   GET /api/shops/profile
+ * @access  Private (Shop Owner)
+ */
+export const getMyShop = async (req: any, res: Response) => {
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { userId: req.user.id },
+      include: {
+        hours: true,
+        certifications: true,
+        services: {
+          include: {
+            service: true
+          }
+        },
+        _count: {
+          select: { reviews: true }
+        }
+      }
+    });
+
+    if (!shop) {
+      return res.status(404).json({ message: 'Shop profile not found' });
+    }
+
+    res.json(shop);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
