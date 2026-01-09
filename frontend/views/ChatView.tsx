@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Shop } from '../types';
+import { socket } from '../services/socket';
+import api from '../services/api';
 import { Send, ArrowLeft, Phone, Video, Paperclip, CheckCheck, MapPin } from 'lucide-react';
 
 interface ChatViewProps {
@@ -15,15 +17,9 @@ interface Message {
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    { 
-      id: 1, 
-      sender: 'shop', 
-      text: `G'day! 👋 We're ready to get under the hood of your ride. How can we help?`, 
-      time: '10:30 AM' 
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
+  const [conversationId, setConversationId] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -34,28 +30,110 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = () => {
+  // Fetch history and connect socket
+  useEffect(() => {
+    let isSubscribed = true;
+
+    const fetchConversation = async () => {
+        try {
+            const { data } = await api.get(`/conversations/${shop.id}`);
+            if (isSubscribed) {
+                setConversationId(data.id);
+                // Transform backend messages to frontend format
+                const loadedMessages = data.messages.map((m: any) => ({
+                    id: m.id,
+                    sender: m.senderId === shop.userId ? 'shop' : 'user', // Assuming shop.userId exists or logic is handled
+                    text: m.message,
+                    time: new Date(m.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                }));
+                // If empty, add welcome message
+                if (loadedMessages.length === 0) {
+                     setMessages([{ 
+                        id: 0, 
+                        sender: 'shop', 
+                        text: `G'day! 👋 We're ready to get under the hood of your ride. How can we help?`, 
+                        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
+                    }]);
+                } else {
+                    setMessages(loadedMessages);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load conversation', error);
+        }
+    };
+
+    fetchConversation();
+
+    return () => {
+        isSubscribed = false;
+    };
+  }, [shop.id]); // Re-run when shop changes
+
+  // Socket subscription
+  useEffect(() => {
+    if (!conversationId) return;
+
+    // Room ID must match backend: conversation_{id}
+    const roomId = `conversation_${conversationId}`;
+    
+    socket.connect();
+    socket.emit('join_room', roomId);
+
+    const handleReceiveMessage = (msg: any) => {
+        // Transform incoming message
+        const newMsg: Message = {
+            id: msg.id,
+            sender: msg.sender,
+            text: msg.text,
+            time: new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+        };
+
+         // Prevent dupes if sender is self (handled locally/optimistically) - though checking ID is safer
+        setMessages(prev => {
+            if (prev.some(m => m.id === newMsg.id)) return prev;
+            return [...prev, newMsg];
+        });
+    };
+
+    socket.on('receive_message', handleReceiveMessage);
+
+    return () => {
+      socket.off('receive_message', handleReceiveMessage);
+      socket.disconnect();
+    };
+  }, [conversationId]);
+
+
+  const handleSend = async () => {
     if (!inputText.trim()) return;
     
-    const newMsg: Message = { 
-      id: Date.now(), 
-      sender: 'user', 
-      text: inputText, 
-      time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
+    const text = inputText;
+    // Optimistic Update
+    const tempId = Date.now();
+    const optimisticMsg: Message = { 
+        id: tempId, 
+        sender: 'user', 
+        text: text, 
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
     };
-    
-    setMessages(prev => [...prev, newMsg]);
+    setMessages(prev => [...prev, optimisticMsg]);
     setInputText('');
-    
-    // Simulate auto-reply
-    setTimeout(() => {
-        setMessages(prev => [...prev, { 
-            id: Date.now() + 1, 
-            sender: 'shop', 
-            text: "Got it. Feel free to attach a quick photo or video of the noise/symptom so we can have our tech look at it before you arrive.", 
-            time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
-        }]);
-    }, 1500);
+
+    try {
+        const { data } = await api.post(`/conversations/${shop.id}/messages`, { text });
+        // Update optimistic message with real ID?? Or just let implicit replacement separate by ID? 
+        // For simplicity, we just leave it. If socket comes back, our duplicate check handles it.
+        // But since we are sender, socket usually broadcasts to others. 
+        // Backend `socket.to(room)` excludes sender. SO we rely on optimistic update mostly.
+        
+        // Update temp ID to real ID to avoid key issues?
+        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: data.id } : m));
+
+    } catch (error) {
+        console.error('Failed to send message', error);
+        // Remove optimistic message if failed?
+    }
   };
 
   return (
@@ -68,9 +146,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
                 </button>
                 <div className="relative">
                     <div className="w-12 h-12 rounded-xl overflow-hidden border-2 border-primary/20 shadow-[0_0_15px_rgba(250,204,21,0.1)]">
-                        <img src={shop.image} alt={shop.name} className="object-cover w-full h-full" />
+                        <img src={shop.imageUrl || 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&q=80&w=1000'} alt={shop.name} className="object-cover w-full h-full" />
                     </div>
-                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-success rounded-full border-2 border-slate-900 shadow-sm"></div>
                 </div>
                 <div>
                     <h3 className="font-black italic uppercase tracking-tighter text-lg leading-none">{shop.name}</h3>

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { MOCK_POSTS, MOCK_SHOPS } from '../constants';
 import { ForumPost, UserRole, Comment, Shop } from '../types';
+import api from '../services/api'; // Import API
 import { 
   MessageSquare, 
   ThumbsUp, 
@@ -31,16 +32,34 @@ interface ForumProps {
 type SortType = 'hot' | 'new' | 'top';
 
 export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
-  const [posts, setPosts] = useState<ForumPost[]>(MOCK_POSTS);
+  const [posts, setPosts] = useState<ForumPost[]>([]);
   const [newPostContent, setNewPostContent] = useState('');
   const [newPostTitle, setNewPostTitle] = useState('');
   const [isAskingAi, setIsAskingAi] = useState(false);
   const [aiResponse, setAiResponse] = useState<string | null>(null);
-  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [expandedPostId, setExpandedPostId] = useState<string | number | null>(null);
   const [newCommentContent, setNewCommentContent] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<SortType>('hot');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch posts
+  const fetchPosts = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get('/forum');
+      setPosts(data);
+    } catch (error) {
+      console.error('Failed to load forum posts', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPosts();
+  }, []);
 
   // Trending topics extracted from posts
   const trendingTopics = useMemo(() => {
@@ -101,28 +120,41 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
     setIsAskingAi(false);
   };
 
-  const handleCreatePost = () => {
+  const handleCreatePost = async () => {
     if (!newPostContent.trim() || !newPostTitle.trim()) return;
     
-    const newPost: ForumPost = {
-      id: `p${Date.now()}`,
-      author: currentRole === UserRole.SHOP ? 'My Shop (You)' : 'Me',
-      authorRole: currentRole,
-      title: newPostTitle,
-      content: newPostContent,
-      likes: 0,
-      comments: [],
-      tags: ['New'],
-      createdAt: new Date().toISOString(),
-    };
+    try {
+        const { data } = await api.post('/forum', {
+            title: newPostTitle,
+            content: newPostContent,
+            tags: ['New'] // TODO: Add tag selection UI
+        });
 
-    setPosts([newPost, ...posts]);
-    setNewPostContent('');
-    setNewPostTitle('');
-    setAiResponse(null);
+        // Add to local state (optimistic or refresh)
+        // Transformation to match frontend structure if needed
+        const newPost: ForumPost = {
+            id: data.id,
+            author: data.author.name, // Assuming backend return structure
+            authorRole: data.author.role,
+            title: data.title,
+            content: data.content,
+            likes: 0,
+            comments: [],
+            tags: data.tags || [],
+            createdAt: data.createdAt,
+        };
+
+        setPosts([newPost, ...posts]);
+        setNewPostContent('');
+        setNewPostTitle('');
+        setAiResponse(null);
+        fetchPosts(); // Refresh to be safe
+    } catch (error) {
+        console.error('Failed to create post', error);
+    }
   };
 
-  const toggleComments = (postId: string) => {
+  const toggleComments = (postId: string | number) => {
     if (expandedPostId === postId) {
       setExpandedPostId(null);
     } else {
@@ -131,32 +163,52 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
     }
   };
 
-  const handleLike = (postId: string) => {
+  const handleLike = async (postId: string | number) => {
+    // Optimistic
     setPosts(posts.map(p => 
-      p.id === postId ? { ...p, likes: p.likes + 1 } : p
+      p.id === postId ? { ...p, likes: p.likes + 1 } : p // Simplified toggle logic for UI feedback
     ));
+
+    try {
+        const { data } = await api.post(`/forum/${postId}/like`);
+        // Sync with server response if needed (e.g. if we unliked)
+        // For now, let's refresh to get accurate count
+        fetchPosts(); 
+    } catch (error) {
+        console.error('Failed to like post', error);
+        fetchPosts(); // Revert
+    }
   };
 
-  const handlePostComment = (postId: string) => {
+  const handlePostComment = async (postId: string | number) => {
     if (!newCommentContent.trim()) return;
 
-    const newComment: Comment = {
-      id: `c${Date.now()}`,
-      author: currentRole === UserRole.SHOP ? 'My Verified Shop' : 'Me',
-      role: currentRole,
-      content: newCommentContent,
-      date: 'Just now'
-    };
+    try {
+        const { data } = await api.post(`/forum/${postId}/comments`, {
+            content: newCommentContent
+        });
 
-    const updatedPosts = posts.map(post => {
-      if (post.id === postId) {
-        return { ...post, comments: [...post.comments, newComment] };
-      }
-      return post;
-    });
+        const newComment: Comment = {
+            id: data.id,
+            author: data.author, // Backend returns transformed
+            role: data.role,
+            content: data.content,
+            date: 'Just now', // or data.date
+            shopId: data.shopId
+        };
 
-    setPosts(updatedPosts);
-    setNewCommentContent('');
+        const updatedPosts = posts.map(post => {
+            if (post.id === postId) {
+                return { ...post, comments: [...post.comments, newComment] };
+            }
+            return post;
+        });
+
+        setPosts(updatedPosts);
+        setNewCommentContent('');
+    } catch (error) {
+        console.error('Failed to post comment', error);
+    }
   };
 
   const handleShopLinkClick = (shopId: string) => {
@@ -165,6 +217,10 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
       onShopSelect(shop);
     }
   };
+
+  if (loading && posts.length === 0) {
+      return <div className="flex justify-center p-12"><span className="loading loading-spinner text-primary"></span></div>;
+  }
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -300,7 +356,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                         post.authorRole === UserRole.SHOP ? 'bg-primary/20 text-primary' : 'bg-slate-700'
                       }`}>
-                        <span className="font-bold">{post.author.charAt(0)}</span>
+                        <span className="font-bold uppercase">{post.author.charAt(0)}</span>
                       </div>
                       <div>
                         <h3 className="font-bold text-lg leading-tight hover:text-primary cursor-pointer">
@@ -398,7 +454,9 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
                                   {comment.role === UserRole.SHOP && (
                                     <span className="badge badge-xs badge-success">Verified Shop</span>
                                   )}
-                                  <span className="text-xs text-slate-500">{comment.date}</span>
+                                  <span className="text-xs text-slate-500">
+                                      {new Date(comment.date).toLocaleDateString() === 'Invalid Date' ? comment.date : new Date(comment.date).toLocaleDateString()}
+                                  </span>
                                 </div>
                                 <p className="text-sm mt-1 text-slate-300">{comment.content}</p>
                                 {comment.role === UserRole.SHOP && comment.shopId && (

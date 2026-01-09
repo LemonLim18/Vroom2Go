@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import api from './services/api';
+import Swal from 'sweetalert2';
 import { Layout } from './components/Layout';
 import { UserRole, Service, Shop, Vehicle, Quote, Booking } from './types';
 import { OwnerHome } from './views/OwnerHome';
@@ -64,7 +66,9 @@ const App: React.FC = () => {
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.OWNER);
   const [currentView, setCurrentView] = useState<string>('home');
   const [showOnboarding, setShowOnboarding] = useState(false);
-  
+  const [onboardingMode, setOnboardingMode] = useState<'signup' | 'login'>('signup');
+  const [isLoading, setIsLoading] = useState(true);
+
   // Selection states
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
@@ -76,6 +80,44 @@ const App: React.FC = () => {
   const [isBooking, setIsBooking] = useState(false);
   const [bookingServiceId, setBookingServiceId] = useState<string | undefined>(undefined);
   const [activeChatShop, setActiveChatShop] = useState<Shop | null>(null);
+
+  // Check for active session
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setShowOnboarding(true);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const { data } = await api.get('/auth/me');
+        setCurrentRole(data.user.role as UserRole);
+        // If shop, redirect to dashboard
+        if (data.user.role === UserRole.SHOP) {
+          setCurrentView('dashboard');
+        }
+      } catch (error) {
+        console.error('Session expired:', error);
+        localStorage.removeItem('token');
+        setShowOnboarding(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-slate-900 text-white">
+        <div className="loading loading-spinner loading-lg text-primary"></div>
+      </div>
+    );
+  }
+  
 
   // Clear all selection states
   const clearSelections = () => {
@@ -100,6 +142,7 @@ const App: React.FC = () => {
             handleNavigate(role === UserRole.SHOP ? 'dashboard' : 'home');
           }}
           onSkip={() => setShowOnboarding(false)}
+          initialAuthMode={onboardingMode}
         />
       );
     }
@@ -229,7 +272,19 @@ const App: React.FC = () => {
         return <ShopDashboard />;
       
       case 'profile':
-        if (currentRole === UserRole.OWNER) return <UserProfile />;
+        if (currentRole === UserRole.OWNER) return (
+          <UserProfile 
+            onLogin={() => {
+              setOnboardingMode('login');
+              setShowOnboarding(true);
+            }}
+            onLogout={() => {
+              localStorage.removeItem('token');
+              localStorage.removeItem('user');
+              window.location.reload();
+            }}
+          />
+        );
         if (currentRole === UserRole.SHOP) return <ShopProfileSettings />;
         // Admin profile - show basic settings
         return (
@@ -379,15 +434,35 @@ const App: React.FC = () => {
     setCurrentView(view);
   };
 
+  const handleRoleSwitch = (targetRole: UserRole) => {
+    // strict session management: specific roles require specific login sessions
+    Swal.fire({
+      title: `Switch to ${targetRole}?`,
+      text: "This requires logging in with a different account. Your current session will be closed.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#FACC15', // Primary Yellow
+      cancelButtonColor: '#1e293b', // Slate 800
+      confirmButtonText: 'Yes, Sign Out & Switch',
+      cancelButtonText: 'Cancel',
+      background: '#0f172a', // Slate 900
+      color: '#fff'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setCurrentRole(targetRole); 
+        clearSelections();
+        setOnboardingMode('login');
+        setShowOnboarding(true);
+      }
+    });
+  };
+
   return (
     <Layout 
       currentRole={currentRole} 
-      onRoleChange={(role) => {
-        setCurrentRole(role);
-        if (role === UserRole.SHOP) handleNavigate('dashboard');
-        else if (role === UserRole.OWNER) handleNavigate('home');
-        else handleNavigate('admin');
-      }}
+      onRoleChange={handleRoleSwitch}
       currentView={currentView}
       onNavigate={handleNavigate}
       onOpenChat={(shop) => setActiveChatShop(shop)}

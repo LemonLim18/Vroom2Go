@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Swal from 'sweetalert2';
 import { UserRole, Shop } from '../types';
 import { MOCK_SHOPS, MOCK_BOOKINGS, MOCK_USERS } from '../constants';
 import {
@@ -294,10 +295,42 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                     <button onClick={() => { setSelectedItem(shop); setShowReviewModal(true); }} className="btn btn-sm btn-ghost gap-1">
                       <Eye className="w-4 h-4" /> Review Documents
                     </button>
-                    <button onClick={() => showToast(`${shop.name} has been approved!`)} className="btn btn-sm btn-success gap-1">
+                    <button onClick={() => {
+                        Swal.fire({
+                          title: 'Approve Shop?',
+                          text: `${shop.name} will be verified and listed publicly.`,
+                          icon: 'question',
+                          showCancelButton: true,
+                          confirmButtonColor: '#22c55e', // Green
+                          cancelButtonColor: '#1e293b',
+                          confirmButtonText: 'Approve Verification',
+                          background: '#0f172a',
+                          color: '#fff'
+                        }).then((result) => {
+                          if (result.isConfirmed) {
+                             showToast(`${shop.name} has been approved!`);
+                          }
+                        });
+                      }} className="btn btn-sm btn-success gap-1">
                       <CheckCircle className="w-4 h-4" /> Approve
                     </button>
-                    <button onClick={() => showToast(`${shop.name} has been rejected`)} className="btn btn-sm btn-error gap-1">
+                    <button onClick={() => {
+                        Swal.fire({
+                          title: 'Reject Application?',
+                          text: `Rejecting ${shop.name} cannot be undone easily.`,
+                          icon: 'warning',
+                          showCancelButton: true,
+                          confirmButtonColor: '#ef4444', // Red
+                          cancelButtonColor: '#1e293b',
+                          confirmButtonText: 'Yes, Reject',
+                          background: '#0f172a',
+                          color: '#fff'
+                        }).then((result) => {
+                          if (result.isConfirmed) {
+                             showToast(`${shop.name} has been rejected`);
+                          }
+                        });
+                      }} className="btn btn-sm btn-error gap-1">
                       <XCircle className="w-4 h-4" /> Reject
                     </button>
                   </div>
@@ -367,7 +400,23 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                     <button onClick={() => { setSelectedItem(dispute); setShowContactModal(true); }} className="btn btn-sm btn-outline gap-1">
                       <MessageSquare className="w-4 h-4" /> Contact Parties
                     </button>
-                    <button onClick={() => showToast(`Dispute #${dispute.id.toUpperCase()} resolved`)} className="btn btn-sm btn-success gap-1">
+                    <button onClick={() => {
+                        Swal.fire({
+                          title: 'Resolve Dispute?',
+                          text: `Mark Dispute #${dispute.id.toUpperCase()} as resolved?`,
+                          icon: 'info',
+                          showCancelButton: true,
+                          confirmButtonColor: '#22c55e',
+                          cancelButtonColor: '#1e293b',
+                          confirmButtonText: 'Confirm Resolution',
+                          background: '#0f172a',
+                          color: '#fff'
+                        }).then((result) => {
+                          if (result.isConfirmed) {
+                            showToast(`Dispute #${dispute.id.toUpperCase()} resolved`);
+                          }
+                        });
+                      }} className="btn btn-sm btn-success gap-1">
                       <CheckCircle className="w-4 h-4" /> Resolve
                     </button>
                   </div>

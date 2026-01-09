@@ -84,6 +84,64 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
         </div>
       </div>
 
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-40 bg-slate-900/95 backdrop-blur-xl md:hidden animate-in fade-in slide-in-from-top-10 duration-200">
+          <div className="flex flex-col h-full p-6 pt-24 space-y-6 overflow-y-auto">
+            
+            {/* Mobile Navigation Links */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase text-slate-500 mb-2">Navigation</p>
+              {filteredNav.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onNavigate(item.id);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${
+                    currentView === item.id 
+                      ? 'bg-primary text-black font-bold shadow-[0_0_20px_rgba(250,204,21,0.3)]' 
+                      : 'bg-slate-800/50 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <item.icon className="w-6 h-6" />
+                  <span className="text-lg">{item.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="h-px bg-white/10 my-2" />
+
+            {/* Mobile Role Switcher */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase text-slate-500 mb-2">Switch Profile</p>
+              <div className="grid grid-cols-1 gap-3">
+                 <button 
+                  onClick={() => { onRoleChange(UserRole.OWNER); setIsMobileMenuOpen(false); }}
+                  className={`btn ${currentRole === UserRole.OWNER ? 'btn-primary' : 'btn-outline'} justify-start gap-3`}
+                 >
+                   <User className="w-5 h-5" /> Vehicle Owner
+                 </button>
+                 <button 
+                  onClick={() => { onRoleChange(UserRole.SHOP); setIsMobileMenuOpen(false); }}
+                  className={`btn ${currentRole === UserRole.SHOP ? 'btn-primary' : 'btn-outline'} justify-start gap-3`}
+                 >
+                   <Wrench className="w-5 h-5" /> Mechanic Shop
+                 </button>
+                 <button 
+                  onClick={() => { onRoleChange(UserRole.ADMIN); setIsMobileMenuOpen(false); }}
+                  className={`btn ${currentRole === UserRole.ADMIN ? 'btn-primary' : 'btn-outline'} justify-start gap-3`}
+                 >
+                   <ShieldCheck className="w-5 h-5" /> Admin Console
+                 </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-20">
         <div className="max-w-6xl mx-auto pb-12">

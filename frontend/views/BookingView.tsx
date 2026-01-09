@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import api from '../services/api';
 import { Shop, Service, Vehicle, BookingMethod } from '../types';
-import { MOCK_VEHICLES, MOCK_SERVICES } from '../constants';
+import { MOCK_SERVICES } from '../constants';
 import { 
   Calendar, 
   Car, 
@@ -46,7 +47,8 @@ const SAVED_CARDS: SavedCard[] = [
 
 export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId, onConfirm, onCancel }) => {
   const [selectedServiceId, setSelectedServiceId] = useState<string>(initialServiceId || shop.services[0]);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string>(MOCK_VEHICLES[0].id);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [bookingMethod, setBookingMethod] = useState<BookingMethod>(BookingMethod.DROP_OFF);
@@ -58,6 +60,35 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  useEffect(() => {
+    const fetchVehicles = async () => {
+      try {
+        const { data } = await api.get('/vehicles');
+        const userVehicles = data;
+        // Map if needed, or assume backend format is close enough if using 'any' or updating types
+        const mappedUserVehicles = userVehicles.map((v: any) => ({
+            id: v.id,
+            make: v.make,
+            model: v.model,
+            year: v.year,
+            type: v.type, // Enum match expected
+            vin: v.vin,
+            image: v.image_url || 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1000',
+            mileage: v.mileage,
+            licensePlate: v.license_plate
+        }));
+
+        setVehicles(mappedUserVehicles);
+        if (mappedUserVehicles.length > 0) {
+            setSelectedVehicleId(mappedUserVehicles[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to fetch vehicles', error);
+      }
+    };
+    fetchVehicles();
+  }, []);
 
   // Show toast notification
   const showToast = (message: string) => {
@@ -91,12 +122,29 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
   const depositAmount = (totalPrice * 0.20);
   const remainingBalance = totalPrice - depositAmount;
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    if (!selectedVehicleId || !selectedDate || !selectedTime) return;
+
     setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      const payload = {
+        shopId: shop.id,
+        vehicleId: selectedVehicleId,
+        serviceName: selectedService?.name || 'General Service',
+        date: `${selectedDate} ${selectedTime}`, // Simplified datetime string
+        price: totalPrice,
+        status: 'Pending'
+      };
+
+      await api.post('/bookings', payload);
+      
       setIsSuccess(true);
-    }, 2000);
+    } catch (error) {
+      console.error('Booking failed', error);
+      showToast('Booking failed. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (isSuccess) {
@@ -158,7 +206,11 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                    <ChevronRight className="w-4 h-4" /> Select Vehicle
                 </h3>
                 <div className="grid grid-cols-1 gap-3">
-                  {MOCK_VEHICLES.map(v => (
+                  {vehicles.length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-slate-800/30 border border-dashed border-slate-600 text-center text-slate-400">
+                        No vehicles found. Go to your Garage to add one.
+                    </div>
+                  ) : vehicles.map(v => (
                     <div 
                       key={v.id} 
                       className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center gap-4 ${selectedVehicleId === v.id ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(250,204,21,0.1)]' : 'bg-slate-800/30 border-white/5 hover:border-white/10'}`}
@@ -169,7 +221,7 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                       </div>
                       <div className="flex-1">
                         <div className="font-black italic uppercase tracking-tighter">{v.year} {v.make} {v.model}</div>
-                        <div className="text-[10px] text-slate-500 font-bold uppercase">{v.licensePlate}</div>
+                        <div className="text-[10px] text-slate-500 font-bold uppercase">{v.licensePlate || 'NO PLATE'}</div>
                       </div>
                       {selectedVehicleId === v.id && <CheckCircle className="w-5 h-5 text-primary" />}
                     </div>

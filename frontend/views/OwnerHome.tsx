@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { MOCK_SERVICES, MOCK_SHOPS, MOCK_DIAGNOSTIC_PACKAGES, MOCK_VEHICLES } from '../constants';
+import api from '../services/api';
+import { MOCK_SERVICES, MOCK_DIAGNOSTIC_PACKAGES, MOCK_VEHICLES } from '../constants';
 import { Search, MapPin, Star, Zap, Gauge, ArrowRight, Wrench, Car, ChevronLeft, ChevronRight, Sparkles, Clock, ShieldCheck, Gift, TrendingUp, Calendar, Stethoscope } from 'lucide-react';
 import { Service, Shop, DiagnosticPackage } from '../types';
 
@@ -44,6 +45,45 @@ const PROMOTIONS = [
 export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSelect, onNavigate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
+
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch shops
+  useEffect(() => {
+    const fetchShops = async () => {
+      try {
+        const { data } = await api.get('/shops');
+        // Map backend snake_case to frontend camelCase
+        const mappedShops = data.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          address: s.address,
+          // Map fields
+          image: s.image_url || 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=1000',
+          rating: Number(s.rating) || 0,
+          reviewCount: s.review_count || 0,
+          verified: s.verified,
+          laborRate: Number(s.labor_rate),
+          warrantyDays: s.warranty_days,
+          depositPercent: s.deposit_percent,
+          // Mocks or calculated
+          distance: '2.5 miles', 
+          services: ['General Maintenance', 'Diagnostics'],
+          availability: {}, 
+          customPrices: {},
+          reviews: [] 
+        }));
+        setShops(mappedShops);
+      } catch (error) {
+        console.error('Failed to fetch shops:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchShops();
+  }, []);
 
   // Auto-rotate promotions
   useEffect(() => {
@@ -316,7 +356,14 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
           </button>
         </div>
         <div className="flex overflow-x-auto gap-6 pb-6 scrollbar-hide">
-          {MOCK_SHOPS.map((shop) => (
+          {loading ? (
+             <div className="flex gap-6 w-full">
+               {[1, 2, 3].map(i => (
+                 <div key={i} className="skeleton w-80 h-96 rounded-3xl opacity-10"></div>
+               ))}
+             </div>
+          ) : (
+            shops.map((shop) => (
             <div key={shop.id} className="glass-card w-80 flex-shrink-0 rounded-3xl overflow-hidden border border-white/5 group cursor-pointer hover:border-primary/20" onClick={() => onShopSelect(shop)}>
               <div className="h-44 relative overflow-hidden">
                 <img src={shop.image} alt={shop.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
@@ -330,23 +377,24 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
                 </div>
               </div>
               <div className="p-6">
-                <h3 className="font-black text-xl mb-1 uppercase italic">{shop.name}</h3>
+                <h3 className="font-black text-xl mb-1 uppercase italic truncate">{shop.name}</h3>
                 <div className="flex items-center text-xs text-slate-400 gap-2 mb-3">
                   <MapPin className="w-3 h-3 text-primary" />
-                  {shop.distance} • {shop.address}
+                  {shop.distance} • <span className="truncate max-w-[120px]">{shop.address}</span>
                 </div>
                 <div className="flex items-center gap-2 mb-4 text-xs">
                   {shop.laborRate && (
-                    <span className="badge badge-ghost badge-sm">${shop.laborRate}/hr</span>
+                    <span className="badge badge-ghost badge-sm border-white/10">${shop.laborRate}/hr</span>
                   )}
                   {shop.warrantyDays && (
-                    <span className="badge badge-ghost badge-sm">{shop.warrantyDays}d warranty</span>
+                    <span className="badge badge-ghost badge-sm border-white/10">{shop.warrantyDays}d warranty</span>
                   )}
                 </div>
                 <button onClick={(e) => { e.stopPropagation(); onShopSelect(shop); }} className="btn btn-sm btn-outline border-slate-700 text-slate-300 hover:bg-primary hover:text-black hover:border-primary w-full rounded-xl uppercase font-bold italic">Details</button>
               </div>
             </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
     </div>

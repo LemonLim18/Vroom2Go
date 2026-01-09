@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import api from '../services/api';
 import { MOCK_VEHICLES, MOCK_BOOKINGS, MOCK_USERS } from '../constants';
+import { UserRole, CarType, Vehicle, Booking } from '../types';
 import { 
   Car, 
   Wrench, 
@@ -34,48 +36,141 @@ interface ServiceHistoryItem {
 }
 
 // Mock service history with warranty info
-const SERVICE_HISTORY: ServiceHistoryItem[] = [
-  {
-    id: 'sh1',
-    serviceName: 'Brake Pad Replacement',
-    shopName: 'Speedy Fix Auto',
-    date: '2024-01-10',
-    status: 'warranty',
-    total: 350,
-    warrantyUntil: '2025-01-10'
-  },
-  {
-    id: 'sh2',
-    serviceName: 'Full Synthetic Oil Change',
-    shopName: 'Turbo Tune Garage',
-    date: '2023-12-15',
-    status: 'completed',
-    total: 85
-  },
-  {
-    id: 'sh3',
-    serviceName: 'Tire Rotation',
-    shopName: 'Speedy Fix Auto',
-    date: '2023-11-20',
-    status: 'completed',
-    total: 45
-  },
-];
+// Mock service history with warranty info (Legacy type for UI only)
+const SERVICE_HISTORY: ServiceHistoryItem[] = [];
 
-export const UserProfile: React.FC = () => {
+interface UserProfileProps {
+  onLogin?: () => void;
+  onLogout?: () => void;
+}
+
+export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) => {
   const [activeTab, setActiveTab] = useState<ProfileTab>('vehicles');
   const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
   const [showEditVehicleModal, setShowEditVehicleModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  
+  // Data State
+  const [user, setUser] = useState<any>(null);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Form State for Add Vehicle
+  const [newVehicle, setNewVehicle] = useState({
+    make: '',
+    model: '',
+    year: new Date().getFullYear(),
+    type: 'SEDAN', // Default to uppercase for backend
+    vin: '',
+    mileage: 0
+  });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Load User from LocalStorage
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          setUser(JSON.parse(storedUser));
+        }
+
+        // Fetch user's data
+        const [vehiclesRes, bookingsRes] = await Promise.all([
+          api.get('/vehicles'),
+          api.get('/bookings')
+        ]);
+        
+        // Map backend vehicles to frontend type
+        const mappedVehicles = vehiclesRes.data.map((v: any) => ({
+          id: v.id,
+          make: v.make,
+          model: v.model,
+          year: v.year,
+          type: v.type, // Enum match expected
+          vin: v.vin,
+          image: v.image_url || 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1000',
+          mileage: v.mileage,
+          licensePlate: v.license_plate
+        }));
+        
+        setVehicles(mappedVehicles);
+        setBookings(bookingsRes.data || []);
+      } catch (error) {
+        console.error('Failed to load profile data', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const handleAddVehicle = async () => {
+    try {
+      const payload = {
+        make: newVehicle.make,
+        model: newVehicle.model,
+        year: Number(newVehicle.year),
+        type: newVehicle.type,
+        vin: newVehicle.vin || undefined, // Send undefined if empty to avoid unique constraint if we had one (VIN is unique)
+        mileage: Number(newVehicle.mileage)
+      };
+      
+      const { data } = await api.post('/vehicles', payload);
+      const addedVehicle = {
+        id: data.id,
+        ...data,
+        image: 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1000'
+      };
+      
+      setVehicles([...vehicles, addedVehicle]);
+      setShowAddVehicleModal(false);
+      showToast('Vehicle added successfully!');
+    } catch (error) {
+       console.error('Failed to add vehicle', error);
+       showToast('Failed to add vehicle');
+    }
+  };
+
+  const handleDeleteVehicle = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this vehicle?')) return;
+    try {
+      await api.delete(`/vehicles/${id}`);
+      setVehicles(vehicles.filter(v => v.id !== id));
+      showToast('Vehicle removed');
+    } catch (error) {
+       console.error('Failed to delete', error);
+       showToast('Could not delete vehicle');
+    }
+  };
+
+  // Show toast notification
 
   // Show toast notification
   const showToast = (message: string) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 3000);
   };
-
-  // Get first owner user for profile display
-  const user = MOCK_USERS.find(u => u.role === 'OWNER') || MOCK_USERS[0];
+   
+  if (loading) return <div className="p-10 text-center"><span className="loading loading-spinner"></span> Loading profile...</div>;
+  
+  if (!user) return (
+    <div className="flex flex-col items-center justify-center p-10 h-[60vh]">
+      <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-6">
+        <User className="w-10 h-10 text-slate-500" />
+      </div>
+      <h2 className="text-2xl font-black italic uppercase mb-2">Guest Profile</h2>
+      <p className="text-slate-400 mb-8 max-w-sm text-center">
+        Sign in to manage your vehicles, view service history, and track bookings.
+      </p>
+      {onLogin && (
+        <button onClick={onLogin} className="btn btn-primary btn-lg rounded-full px-8">
+          Sign In / Create Account
+        </button>
+      )}
+    </div>
+  );
 
   const tabs = [
     { id: 'vehicles' as const, label: 'My Garage', icon: Car },
@@ -139,7 +234,7 @@ export const UserProfile: React.FC = () => {
             </div>
             
             <div className="grid md:grid-cols-2 gap-4">
-              {MOCK_VEHICLES.map(vehicle => (
+              {vehicles.map(vehicle => (
                 <div key={vehicle.id} className="glass-card rounded-2xl overflow-hidden border border-white/5 group hover:border-primary/20 transition-all">
                   <div className="h-32 relative">
                     <img src={vehicle.image} alt={vehicle.model} className="w-full h-full object-cover" />
@@ -150,17 +245,23 @@ export const UserProfile: React.FC = () => {
                   </div>
                   <div className="p-4">
                     <h3 className="font-bold text-lg">{vehicle.year} {vehicle.make} {vehicle.model}</h3>
-                    <p className="text-xs text-slate-400 font-mono">VIN: {vehicle.vin.slice(0, 11)}...</p>
+                    <p className="text-xs text-slate-400 font-mono">VIN: {vehicle.vin ? vehicle.vin.slice(0, 11) + '...' : 'N/A'}</p>
                     {vehicle.mileage && (
                       <p className="text-sm text-slate-300 mt-1">{vehicle.mileage.toLocaleString()} miles</p>
                     )}
                     <div className="flex gap-2 mt-3">
                       <button onClick={() => setShowEditVehicleModal(true)} className="btn btn-xs btn-ghost gap-1"><Edit className="w-3 h-3" /> Edit</button>
-                      <button onClick={() => showToast(`${vehicle.year} ${vehicle.make} ${vehicle.model} removed`)} className="btn btn-xs btn-ghost text-error gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
+                      <button onClick={() => handleDeleteVehicle(vehicle.id)} className="btn btn-xs btn-ghost text-error gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
                     </div>
                   </div>
                 </div>
               ))}
+              {vehicles.length === 0 && (
+                <div className="col-span-2 text-center py-10 opacity-50 border border-dashed border-slate-600 rounded-xl">
+                  <Car className="w-10 h-10 mx-auto mb-2" />
+                  <p>No vehicles in your garage yet.</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -435,7 +536,13 @@ export const UserProfile: React.FC = () => {
             {/* Danger Zone */}
             <div className="glass-card rounded-2xl p-5 border border-red-500/20 bg-red-500/5">
               <h3 className="font-bold mb-4 text-red-400">Danger Zone</h3>
-              <button onClick={() => showToast('Signed out successfully')} className="btn btn-outline btn-error btn-sm w-full gap-2">
+              <button 
+                onClick={() => {
+                  showToast('Signed out successfully');
+                  if (onLogout) onLogout();
+                }} 
+                className="btn btn-outline btn-error btn-sm w-full gap-2"
+              >
                 <LogOut className="w-4 h-4" /> Sign Out
               </button>
             </div>
@@ -464,24 +571,56 @@ export const UserProfile: React.FC = () => {
                 <input type="text" placeholder="Enter 17-digit VIN" className="input input-bordered bg-slate-800 border-white/10 font-mono" />
               </div>
               <div className="text-center text-slate-400 text-sm">OR</div>
-              <div className="grid grid-cols-3 gap-2">
                 <div className="form-control">
+                  <label className="label"><span className="label-text">Type</span></label>
+                  <select 
+                    className="select select-bordered bg-slate-800 border-white/10"
+                    value={newVehicle.type}
+                    onChange={(e) => setNewVehicle({...newVehicle, type: e.target.value})}
+                  >
+                    <option value="SEDAN">Sedan</option>
+                    <option value="COMPACT">Compact</option>
+                    <option value="SUV">SUV</option>
+                    <option value="LUXURY">Luxury</option>
+                    <option value="EV">Electric</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                 <div className="form-control">
                   <label className="label"><span className="label-text">Year</span></label>
-                  <input type="number" placeholder="2024" className="input input-bordered bg-slate-800 border-white/10" />
+                  <input 
+                    type="number" 
+                    placeholder="2024" 
+                    className="input input-bordered bg-slate-800 border-white/10"
+                    value={newVehicle.year}
+                    onChange={(e) => setNewVehicle({...newVehicle, year: Number(e.target.value)})}
+                  />
                 </div>
                 <div className="form-control">
                   <label className="label"><span className="label-text">Make</span></label>
-                  <input type="text" placeholder="Honda" className="input input-bordered bg-slate-800 border-white/10" />
+                  <input 
+                    type="text" 
+                    placeholder="Honda" 
+                    className="input input-bordered bg-slate-800 border-white/10"
+                    value={newVehicle.make}
+                    onChange={(e) => setNewVehicle({...newVehicle, make: e.target.value})}
+                  />
                 </div>
                 <div className="form-control">
                   <label className="label"><span className="label-text">Model</span></label>
-                  <input type="text" placeholder="Civic" className="input input-bordered bg-slate-800 border-white/10" />
+                  <input 
+                    type="text" 
+                    placeholder="Civic" 
+                    className="input input-bordered bg-slate-800 border-white/10"
+                    value={newVehicle.model}
+                    onChange={(e) => setNewVehicle({...newVehicle, model: e.target.value})}
+                  />
                 </div>
-              </div>
+               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowAddVehicleModal(false)} className="btn btn-ghost flex-1">Cancel</button>
-              <button onClick={() => { showToast('Vehicle added successfully!'); setShowAddVehicleModal(false); }} className="btn btn-primary flex-1">Add Vehicle</button>
+              <button onClick={handleAddVehicle} className="btn btn-primary flex-1">Add Vehicle</button>
             </div>
           </div>
         </div>

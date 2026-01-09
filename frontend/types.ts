@@ -185,26 +185,30 @@ export interface Review {
 }
 
 export interface Shop {
-  id: string;
+  id: string | number; // Allow number from backend
+  userId?: string | number;
   name: string;
   rating: number;
   reviewCount: number;
-  distance: string;
+  distance?: string;
   address: string;
   phone?: string;
   email?: string;
   verified: boolean;
-  verifiedDate?: string;
-  services: string[];
-  image: string;
-  description: string;
-  reviews: Review[];
-  customPrices: Record<string, string>;
+  verifiedAt?: string;
+  services?: string[];
+  image?: string; // Legacy
+  imageUrl?: string; // Match backend
+  description?: string;
+  reviews?: Review[];
+  customPrices?: Record<string, string>;
   laborRate?: number;
   partsMarkup?: number;
   depositPercent?: number;
   warrantyDays?: number;
   availability?: ShopAvailability;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ShopAvailability {
@@ -228,7 +232,7 @@ export interface Comment {
 }
 
 export interface ForumPost {
-  id: string;
+  id: string | number;
   author: string;
   authorId?: string;
   authorRole: UserRole;
@@ -243,6 +247,7 @@ export interface ForumPost {
   isAiAnswered?: boolean;
   vehicle?: { make: string; model: string; year: number };
   createdAt?: string;
+  viewCount?: number;
 }
 
 // Enhanced Booking with escrow and job lifecycle

@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { MOCK_SHOPS, MOCK_SERVICES, MOCK_BOOKINGS } from '../constants';
+import api from '../services/api';
 import { ServiceCategory, Shop } from '../types';
 import { 
   Wrench, 
@@ -36,12 +38,52 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
 };
 
 export const ShopProfileSettings: React.FC = () => {
-  // Use first shop as the current shop for demo
-  const shop = MOCK_SHOPS[0];
   const [activeTab, setActiveTab] = useState<ShopSettingsTab>('profile');
   const [isEditing, setIsEditing] = useState(false);
   const [showAddServiceModal, setShowAddServiceModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [shop, setShop] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  
+  // Shop form state
+  const [shopData, setShopData] = useState({
+    name: '',
+    description: '',
+    address: '',
+    phone: '',
+    email: '',
+    laborRate: 85,
+    partsMarkup: 15,
+    depositPercent: 20,
+    warrantyDays: 90,
+  });
+
+  const fetchShopData = async () => {
+    try {
+      const { data } = await api.get('/shops/profile');
+      setShop(data);
+      setShopData({
+        name: data.name,
+        description: data.description || '',
+        address: data.address,
+        phone: data.phone || '',
+        email: data.email || '',
+        laborRate: Number(data.laborRate) || 85,
+        partsMarkup: Number(data.partsMarkup) || 15,
+        depositPercent: data.depositPercent || 20,
+        warrantyDays: data.warrantyDays || 90,
+      });
+    } catch (error) {
+      console.error('Failed to fetch shop profile', error);
+      showToast('Failed to load shop profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchShopData();
+  }, []);
 
   // Show toast notification
   const showToast = (message: string) => {
@@ -49,31 +91,16 @@ export const ShopProfileSettings: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Shop form state
-  const [shopData, setShopData] = useState({
-    name: shop.name,
-    description: shop.description,
-    address: shop.address,
-    phone: shop.phone || '(555) 123-4567',
-    email: shop.email || 'contact@speedyfixauto.com',
-    laborRate: shop.laborRate || 85,
-    partsMarkup: shop.partsMarkup || 15,
-    depositPercent: shop.depositPercent || 20,
-    warrantyDays: shop.warrantyDays || 90,
-  });
-
   // Get services this shop offers
-  const shopServices = MOCK_SERVICES.filter(s => shop.services.includes(s.id));
+  // TODO: Fetch this from backend properly or parse from shop object
+  const shopServices = shop?.services?.map((s: any) => s.service) || []; 
 
-  // Get recent bookings for this shop
-  const recentBookings = MOCK_BOOKINGS.filter(b => b.shopId === shop.id);
-
-  // Stats
+  // Backend TODO: Implement stats 
   const stats = {
-    totalBookings: recentBookings.length,
-    completedJobs: recentBookings.filter(b => b.status === 'Completed').length,
-    pendingJobs: recentBookings.filter(b => b.status === 'In Progress' || b.status === 'Confirmed').length,
-    revenue: recentBookings.reduce((sum, b) => sum + b.estimatedTotal, 0),
+    totalBookings: 0,
+    completedJobs: 0,
+    pendingJobs: 0,
+    revenue: 0,
   };
 
   const tabs = [
@@ -86,10 +113,45 @@ export const ShopProfileSettings: React.FC = () => {
     setShopData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = () => {
-    setIsEditing(false);
-    // Would save to backend here
+  const handleSave = async () => {
+    try {
+      await api.put('/shops/profile', shopData);
+      Swal.fire({
+        title: 'Profile Updated!',
+        text: 'Your shop profile has been successfully saved.',
+        icon: 'success',
+        confirmButtonColor: '#FACC15',
+        background: '#0f172a',
+        color: '#fff'
+      });
+      // showToast('Profile updated successfully!'); // Removed in favor of Swal
+      setIsEditing(false);
+      fetchShopData(); // Refresh data
+    } catch (error) {
+       console.error('Failed to update profile', error);
+       Swal.fire({
+        title: 'Update Failed',
+        text: 'Could not save profile changes. Please try again.',
+        icon: 'error',
+        confirmButtonColor: '#FACC15',
+        background: '#0f172a',
+        color: '#fff'
+      });
+    }
   };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center"><span className="loading loading-spinner loading-lg text-primary"></span></div>;
+  }
+
+  if (!shop) {
+    return (
+        <div className="min-h-screen flex items-center justify-center flex-col gap-4">
+            <h2 className="text-2xl font-bold">No Shop Profile Found</h2>
+            <p className="text-slate-400">Please contact support or ensure you are logged in as a Shop Owner.</p>
+        </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -97,7 +159,7 @@ export const ShopProfileSettings: React.FC = () => {
       <div className="glass-card rounded-3xl border border-white/5 overflow-hidden">
         <div className="h-40 relative bg-slate-800">
           <img 
-            src={shop.image} 
+            src={shop.imageUrl || 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&q=80&w=1000'} 
             alt={shop.name}
             className="w-full h-full object-cover opacity-50"
           />
@@ -111,7 +173,7 @@ export const ShopProfileSettings: React.FC = () => {
           <div className="flex flex-col md:flex-row md:items-end gap-4">
             {/* Shop Avatar */}
             <div className="w-24 h-24 rounded-2xl bg-slate-800 border-4 border-slate-900 overflow-hidden">
-              <img src={shop.image} alt={shop.name} className="w-full h-full object-cover" />
+              <img src={shop.imageUrl || 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&q=80&w=1000'} alt={shop.name} className="w-full h-full object-cover" />
             </div>
             
             <div className="flex-1">
@@ -126,7 +188,7 @@ export const ShopProfileSettings: React.FC = () => {
               <div className="flex flex-wrap items-center gap-4 text-sm text-slate-400">
                 <span className="flex items-center gap-1">
                   <Star className="w-4 h-4 text-primary fill-primary" />
-                  {shop.rating} ({shop.reviewCount} reviews)
+                  {Number(shop.rating || 0).toFixed(1)} ({shop.reviewCount || 0} reviews)
                 </span>
                 <span className="flex items-center gap-1">
                   <MapPin className="w-4 h-4" />
@@ -265,7 +327,7 @@ export const ShopProfileSettings: React.FC = () => {
               </div>
             </div>
 
-            {/* Business Hours */}
+            {/* Business Hours (Static for now, but UI ready) */}
             <div className="glass-card rounded-2xl p-6 border border-white/5">
               <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
                 <Clock className="w-5 h-5 text-primary" />
@@ -310,7 +372,7 @@ export const ShopProfileSettings: React.FC = () => {
                   <p className="font-bold">{shop.verified ? 'Verified Shop' : 'Pending Verification'}</p>
                   <p className="text-xs text-slate-400">
                     {shop.verified 
-                      ? `Verified since ${shop.verifiedDate || 'Jan 2022'}` 
+                      ? `Verified since ${new Date(shop.verifiedAt || '2022-01-01').getFullYear()}` 
                       : 'Submit documents to get verified'}
                   </p>
                 </div>
@@ -320,31 +382,6 @@ export const ShopProfileSettings: React.FC = () => {
               )}
             </div>
 
-            {/* Certifications */}
-            <div className="glass-card rounded-2xl p-5 border border-white/5">
-              <h3 className="font-bold mb-4 flex items-center gap-2">
-                <Award className="w-5 h-5 text-primary" />
-                Certifications
-              </h3>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  ASE Master Technician
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  EPA Certified
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  BBB Accredited
-                </div>
-              </div>
-              <button onClick={() => showToast('Now you can add a new certification')} className="btn btn-ghost btn-sm w-full mt-4 gap-1">
-                <Plus className="w-4 h-4" /> Add Certification
-              </button>
-            </div>
-
             {/* Rating Summary */}
             <div className="glass-card rounded-2xl p-5 border border-white/5">
               <h3 className="font-bold mb-4 flex items-center gap-2">
@@ -352,7 +389,7 @@ export const ShopProfileSettings: React.FC = () => {
                 Rating Summary
               </h3>
               <div className="text-center mb-4">
-                <p className="text-5xl font-black text-primary">{shop.rating}</p>
+                <p className="text-5xl font-black text-primary">{Number(shop.rating || 0).toFixed(1)}</p>
                 <p className="text-slate-400 text-sm">{shop.reviewCount} total reviews</p>
               </div>
               <div className="space-y-2">
@@ -454,8 +491,8 @@ export const ShopProfileSettings: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {shopServices.map(service => {
-                    const CategoryIcon = CATEGORY_ICONS[service.category] || Wrench;
+                  {shopServices.map((service: any) => {
+                    const CategoryIcon = CATEGORY_ICONS[service.category as string] || Wrench;
                     return (
                       <tr key={service.id} className="hover:bg-slate-800/50">
                         <td>
@@ -475,7 +512,7 @@ export const ShopProfileSettings: React.FC = () => {
                         <td>
                           <input 
                             type="text"
-                            defaultValue={shop.customPrices[service.id] || 'Quote'}
+                            defaultValue={shop.customPrices?.[service.id] || 'Quote'}
                             disabled={!isEditing}
                             className="input input-sm input-bordered bg-slate-800 border-white/10 w-24"
                           />
@@ -497,7 +534,7 @@ export const ShopProfileSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Settings Tab */}
+      {/* Settings Tab - Kept largely same but static */}
       {activeTab === 'settings' && (
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
@@ -508,41 +545,8 @@ export const ShopProfileSettings: React.FC = () => {
                 Notification Preferences
               </h3>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">New Booking Requests</p>
-                    <p className="text-sm text-slate-400">Get notified when customers request bookings</p>
-                  </div>
-                  <input type="checkbox" className="toggle toggle-primary" defaultChecked />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Quote Requests</p>
-                    <p className="text-sm text-slate-400">Receive alerts for new quote requests</p>
-                  </div>
-                  <input type="checkbox" className="toggle toggle-primary" defaultChecked />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Customer Messages</p>
-                    <p className="text-sm text-slate-400">Notifications for direct messages</p>
-                  </div>
-                  <input type="checkbox" className="toggle toggle-primary" defaultChecked />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Review Alerts</p>
-                    <p className="text-sm text-slate-400">Get notified when customers leave reviews</p>
-                  </div>
-                  <input type="checkbox" className="toggle toggle-primary" defaultChecked />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Payment Updates</p>
-                    <p className="text-sm text-slate-400">Notifications for deposits and payouts</p>
-                  </div>
-                  <input type="checkbox" className="toggle toggle-primary" defaultChecked />
-                </div>
+                 {/* ... notification toggles ... */}
+                 <p className="text-slate-500 italic">Notification settings coming soon</p>
               </div>
             </div>
 
@@ -552,28 +556,7 @@ export const ShopProfileSettings: React.FC = () => {
                 <DollarSign className="w-5 h-5 text-primary" />
                 Payout Settings
               </h3>
-              <div className="space-y-4">
-                <div className="form-control">
-                  <label className="label"><span className="label-text">Bank Account</span></label>
-                  <div className="flex items-center gap-3 p-4 bg-slate-800/50 rounded-xl">
-                    <div className="w-10 h-6 bg-gradient-to-r from-green-600 to-green-800 rounded flex items-center justify-center text-white text-xs font-bold">
-                      ✓
-                    </div>
-                    <span>Chase •••• 4589</span>
-                    <span className="badge badge-success badge-xs">Default</span>
-                    <button onClick={() => showToast('Bank account updated!')} className="btn btn-ghost btn-xs ml-auto">Change</button>
-                  </div>
-                </div>
-                <div className="form-control">
-                  <label className="label"><span className="label-text">Payout Schedule</span></label>
-                  <select className="select select-bordered bg-slate-800 border-white/10">
-                    <option>Weekly (Every Monday)</option>
-                    <option>Bi-weekly</option>
-                    <option>Monthly</option>
-                    <option>Manual</option>
-                  </select>
-                </div>
-              </div>
+               <p className="text-slate-500 italic">Payout settings coming soon</p>
             </div>
           </div>
 
@@ -588,29 +571,12 @@ export const ShopProfileSettings: React.FC = () => {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Status</span>
-                  <span className="text-green-400 font-medium">Active</span>
+                  <span className="text-green-400 font-medium">{shop.isActive ? 'Active' : 'Inactive'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Member Since</span>
-                  <span>Jan 2022</span>
+                  <span>{new Date(shop.createdAt).toLocaleDateString()}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Plan</span>
-                  <span className="text-primary font-medium">Professional</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Danger Zone */}
-            <div className="glass-card rounded-2xl p-5 border border-red-500/20 bg-red-500/5">
-              <h3 className="font-bold mb-4 text-red-400">Danger Zone</h3>
-              <div className="space-y-3">
-                <button onClick={() => showToast('Shop listing paused')} className="btn btn-outline btn-sm w-full text-slate-400 hover:text-white">
-                  Pause Shop Listing
-                </button>
-                <button onClick={() => showToast('Account deletion request submitted')} className="btn btn-outline btn-error btn-sm w-full">
-                  Delete Account
-                </button>
               </div>
             </div>
           </div>

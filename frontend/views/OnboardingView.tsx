@@ -12,28 +12,43 @@ import {
   MapPin,
   FileCheck,
   CheckCircle,
-  Zap
+  Zap,
+  Lock,
+  AlertCircle
 } from 'lucide-react';
+import api from '../services/api';
 
 interface OnboardingViewProps {
   onComplete: (role: UserRole) => void;
   onSkip?: () => void;
+  initialAuthMode?: 'signup' | 'login' | 'forgot-password'; // Updated type definition
 }
 
 type OnboardingStep = 'welcome' | 'role' | 'details' | 'complete';
 
-export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSkip }) => {
+export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSkip, initialAuthMode = 'signup' }) => {
   const [step, setStep] = useState<OnboardingStep>('welcome');
+  const [authMode, setAuthMode] = useState<'signup' | 'login' | 'forgot-password'>(initialAuthMode);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  
+  // Registration Form Data
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
+    password: '',
     // Shop-specific
     businessName: '',
     businessAddress: '',
     licenseNumber: '',
   });
+
+  // Login Form Data
+  const [loginData, setLoginData] = useState({ email: '', password: '' });
+  
+  // UI States
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const [acceptedTOS, setAcceptedTOS] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,18 +63,96 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
     setStep('details');
   };
 
-  const handleSubmit = () => {
-    if (selectedRole) {
-      setStep('complete');
-      // Simulate delay then complete
+  const handleLogin = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const response = await api.post('/auth/login', loginData);
+      
+      // The backend returns a flat object with user details + token
+      // We need to store user details without the token in 'user'
+      const { token, ...userData } = response.data;
+      
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      
+      // Artificial delay for UX
       setTimeout(() => {
-        onComplete(selectedRole);
-      }, 2000);
+        onComplete(userData.role as UserRole);
+      }, 800);
+    } catch (err: any) {
+      console.error('Login failed', err);
+      setErrorMsg(err.response?.data?.message || 'Invalid email or password');
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      if (!loginData.email) {
+        setErrorMsg('Please enter your email address');
+        setIsLoading(false);
+        return;
+      }
+      await api.post('/auth/forgot-password', { email: loginData.email });
+      setAuthMode('login');
+      alert('If an account exists, a reset link has been sent to your email.');
+    } catch (err) {
+      console.error('Reset failed', err);
+      setErrorMsg('Failed to send reset link');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (selectedRole) {
+      setIsLoading(true);
+      setErrorMsg('');
+      try {
+        setStep('complete');
+        
+        // Prepare payload based on backend expectations
+        const payload = {
+          email: formData.email,
+          password: formData.password,
+          name: formData.name,
+          role: selectedRole,
+          phone: formData.phone,
+          // Only include shop details if role is SHOP
+          ...(selectedRole === UserRole.SHOP && {
+            shopName: formData.businessName,
+            address: formData.businessAddress
+          })
+        };
+
+        const response = await api.post('/auth/register', payload);
+        
+        // Store token and user data
+        
+        // The backend returns a flat object with user details + token
+        const { token, ...userData } = response.data;
+        
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(userData));
+
+        setTimeout(() => {
+          onComplete(selectedRole);
+          setIsLoading(false);
+        }, 1500);
+      } catch (error: any) {
+        console.error('Registration failed:', error);
+        setErrorMsg(error.response?.data?.message || 'Registration failed');
+        setStep('details'); // Go back to form on error
+        setIsLoading(false);
+      }
     }
   };
 
   const canSubmit = () => {
-    if (!acceptedTOS || !formData.name || !formData.email || !formData.phone) {
+    if (!acceptedTOS || !formData.name || !formData.email || !formData.phone || !formData.password) {
       return false;
     }
     if (selectedRole === UserRole.SHOP) {
@@ -67,6 +160,114 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
     }
     return true;
   };
+
+  // Login Screen
+  if (authMode === 'login') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="max-w-md w-full glass-card p-8 rounded-3xl border border-white/10 shadow-2xl">
+          <button 
+             onClick={() => setAuthMode('signup')}
+             className="btn btn-ghost btn-sm mb-6 gap-1 pl-0 text-slate-400 hover:text-white"
+          >
+            ← Create an Account
+          </button>
+
+          <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Welcome Back</h2>
+          <p className="text-slate-400 mb-8">Sign in to your Vroom2 Go account.</p>
+
+          <div className="space-y-4">
+             {errorMsg && (
+              <div className="alert alert-error text-sm py-2 rounded-xl">
+                <AlertCircle className="w-4 h-4" /> <span>{errorMsg}</span>
+              </div>
+            )}
+            
+            <div className="form-control">
+              <label className="label"><span className="label-text">Email</span></label>
+              <input 
+                 type="email" 
+                 className="input input-bordered bg-slate-900/50 border-white/10" 
+                 value={loginData.email}
+                 onChange={(e) => setLoginData({...loginData, email: e.target.value})}
+              />
+            </div>
+            <div className="form-control">
+              <label className="label"><span className="label-text">Password</span></label>
+              <input 
+                 type="password" 
+                 className="input input-bordered bg-slate-900/50 border-white/10"
+                 value={loginData.password}
+                 onChange={(e) => setLoginData({...loginData, password: e.target.value})}
+              />
+              <label className="label">
+                <span 
+                  onClick={() => setAuthMode('forgot-password')}
+                  className="label-text-alt link link-hover text-primary cursor-pointer"
+                >
+                  Forgot password?
+                </span>
+              </label>
+            </div>
+            
+            <button 
+               onClick={handleLogin}
+               disabled={isLoading || !loginData.email || !loginData.password}
+               className="btn btn-primary w-full mt-4 font-bold uppercase italic tracking-wider rounded-xl"
+            >
+              {isLoading ? <span className="loading loading-spinner"></span> : 'Sign In'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Forgot Password Screen
+  if (authMode === 'forgot-password') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="max-w-md w-full glass-card p-8 rounded-3xl border border-white/10 shadow-2xl">
+          <button 
+             onClick={() => setAuthMode('login')}
+             className="btn btn-ghost btn-sm mb-6 gap-1 pl-0 text-slate-400 hover:text-white"
+          >
+            ← Back to Login
+          </button>
+
+          <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-2">Reset Password</h2>
+          <p className="text-slate-400 mb-8">Enter your email and we'll send you a reset link.</p>
+
+          <div className="space-y-4">
+             {errorMsg && (
+              <div className="alert alert-error text-sm py-2 rounded-xl">
+                <AlertCircle className="w-4 h-4" /> <span>{errorMsg}</span>
+              </div>
+            )}
+            
+            <div className="form-control">
+              <label className="label"><span className="label-text">Email</span></label>
+              <input 
+                 type="email" 
+                 className="input input-bordered bg-slate-900/50 border-white/10" 
+                 value={loginData.email}
+                 onChange={(e) => setLoginData({...loginData, email: e.target.value})}
+                 placeholder="name@example.com"
+              />
+            </div>
+            
+            <button 
+               onClick={handleForgotPassword}
+               disabled={isLoading || !loginData.email}
+               className="btn btn-primary w-full mt-4 font-bold uppercase italic tracking-wider rounded-xl"
+            >
+              {isLoading ? <span className="loading loading-spinner"></span> : 'Send Reset Link'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Welcome Screen
   if (step === 'welcome') {
@@ -110,6 +311,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
             Get Started <ArrowRight className="w-5 h-5" />
           </button>
           
+          <div className="mt-6">
+            <p className="text-slate-400 text-sm">
+                Already have an account? <button onClick={() => setAuthMode('login')} className="text-primary font-bold hover:underline">Sign In</button>
+            </p>
+          </div>
+
           {onSkip && (
             <button 
               onClick={onSkip}
@@ -282,6 +489,22 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
               />
             </div>
 
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text text-slate-400 font-medium flex items-center gap-2">
+                  <Lock className="w-4 h-4" /> Password
+                </span>
+              </label>
+              <input 
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                placeholder="••••••••"
+                className="input input-bordered bg-base-100 border-white/10 focus:border-primary"
+              />
+            </div>
+
             {/* Shop-specific Fields */}
             {isShop && (
               <>
@@ -364,6 +587,11 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
             >
               Create Account <ArrowRight className="w-5 h-5" />
             </button>
+            {errorMsg && (
+                <div className="alert alert-error text-sm py-2 rounded-xl mt-4">
+                    <AlertCircle className="w-4 h-4" /> <span>{errorMsg}</span>
+                </div>
+            )}
           </div>
         </div>
       </div>
