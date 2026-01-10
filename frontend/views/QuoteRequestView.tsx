@@ -440,7 +440,7 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-4">
-                    <img src={shop.image || 'https://via.placeholder.com/64'} alt={shop.name} className="w-16 h-12 rounded-lg object-cover" />
+                    <img src={shop.image || 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&q=80&w=1000'} alt={shop.name} className="w-16 h-12 rounded-lg object-cover" />
                     <div className="flex-1">
                       <h3 className="font-bold">{shop.name}</h3>
                       <div className="flex items-center gap-3 text-sm text-slate-400">

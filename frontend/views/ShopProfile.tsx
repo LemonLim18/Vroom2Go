@@ -41,18 +41,35 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
   // Group services by category
   const servicesByCategory = useMemo(() => {
     const grouped: Record<string, { service: Service; price: string }[]> = {};
-    shop.services.forEach(serviceId => {
-      const service = getServiceDetails(serviceId);
-      if (service) {
-        if (!grouped[service.category]) {
-          grouped[service.category] = [];
-        }
-        grouped[service.category].push({
-          service,
-          price: shop.customPrices[serviceId] || 'Quote'
+    
+    if (Array.isArray(shop.services)) {
+        shop.services.forEach((shopService: any) => {
+            // Handle both structure types:
+            // 1. Backend: { service: { ... }, customPrice: "..." }
+            // 2. Frontend Mock: "service_id_string" (legacy)
+            
+            let service: Service | undefined;
+            let price = 'Quote';
+
+            if (typeof shopService === 'string') {
+                service = getServiceDetails(shopService);
+                price = shop.customPrices?.[shopService] || 'Quote';
+            } else if (shopService.service) {
+                service = shopService.service;
+                price = shopService.customPrice || 'Quote';
+            }
+
+            if (service) {
+                if (!grouped[service.category]) {
+                grouped[service.category] = [];
+                }
+                grouped[service.category].push({
+                service,
+                price
+                });
+            }
         });
-      }
-    });
+    }
     return grouped;
   }, [shop.services, shop.customPrices]);
 
@@ -64,6 +81,18 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
       setActiveCategory(categories[0]);
     }
   }, [categories, activeCategory]);
+
+  // Scroll to top on mount
+  React.useEffect(() => {
+    // Since Layout uses a scrollable <main>, window.scrollTo(0,0) doesn't work.
+    // We need to scroll the main container.
+    const mainContainer = document.querySelector('main');
+    if (mainContainer) {
+      mainContainer.scrollTo({ top: 0, behavior: 'auto' });
+    } else {
+        window.scrollTo(0, 0);
+    }
+  }, []);
 
   // Create Google Maps embed URL from address
   const getMapEmbedUrl = (address: string) => {
@@ -94,7 +123,7 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
       <div className="relative overflow-hidden glass-card rounded-[2.5rem] border border-white/5 shadow-2xl">
         <div className="flex flex-col lg:flex-row">
           <div className="lg:w-1/2 h-64 lg:h-[400px] relative">
-            <img src={shop.image} alt={shop.name} className="w-full h-full object-cover grayscale-[0.2] hover:grayscale-0 transition-all duration-700" />
+            <img src={shop.image || shop.imageUrl || "https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&q=80&w=1000"} alt={shop.name} className="w-full h-full object-cover grayscale-[0.2] hover:grayscale-0 transition-all duration-700" />
             <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/40 to-transparent"></div>
             {shop.verified && (
               <div className="absolute top-6 left-6 badge badge-primary font-black italic tracking-widest p-4 shadow-xl shadow-primary/20">
@@ -247,34 +276,49 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
             </div>
 
             <div className="space-y-4">
-              {shop.reviews.map((review) => (
-                <div key={review.id} className="glass-card rounded-2xl p-6 border border-white/5 hover:border-white/10 transition-all">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="avatar placeholder">
-                        <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-12 font-black">
-                          <span>{review.author.charAt(0)}</span>
+              {shop.reviews && shop.reviews.length > 0 ? (
+                shop.reviews.map((review: any) => {
+                  // Handle backend vs frontend structure
+                  const authorName = review.user?.name || review.author || 'Anonymous';
+                  const dateDisplay = review.createdAt 
+                    ? new Date(review.createdAt).toLocaleDateString() 
+                    : review.date || 'Recently';
+
+                  return (
+                    <div key={review.id} className="glass-card rounded-2xl p-6 border border-white/5 hover:border-white/10 transition-all">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="avatar placeholder">
+                            <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-12 font-black">
+                              <span>{authorName.charAt(0)}</span>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="font-bold">{authorName}</div>
+                            <div className="text-xs text-slate-500">{dateDisplay}</div>
+                          </div>
+                        </div>
+                        <div className="flex text-primary">
+                          {[...Array(5)].map((_, i) => (
+                            <Star key={i} className={`w-4 h-4 ${i < review.rating ? 'fill-current' : 'text-slate-700'}`} />
+                          ))}
                         </div>
                       </div>
-                      <div>
-                        <div className="font-bold">{review.author}</div>
-                        <div className="text-xs text-slate-500">{review.date}</div>
-                      </div>
+                      <p className="text-slate-300">"{review.comment}"</p>
+                      {review.serviceName && (
+                        <div className="mt-4 inline-flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full text-xs font-bold text-slate-400 border border-white/5">
+                          <CheckCircle className="w-3 h-3 text-green-400" /> Verified: {review.serviceName}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex text-primary">
-                       {[...Array(5)].map((_, i) => (
-                         <Star key={i} className={`w-4 h-4 ${i < review.rating ? 'fill-current' : 'text-slate-700'}`} />
-                       ))}
-                    </div>
-                  </div>
-                  <p className="text-slate-300">"{review.comment}"</p>
-                  {review.serviceName && (
-                    <div className="mt-4 inline-flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full text-xs font-bold text-slate-400 border border-white/5">
-                      <CheckCircle className="w-3 h-3 text-green-400" /> Verified: {review.serviceName}
-                    </div>
-                  )}
+                  );
+                })
+              ) : (
+                <div className="text-center py-10 opacity-50">
+                    <MessageCircle className="w-10 h-10 mx-auto mb-2" />
+                    <p>No reviews yet. Be the first to review!</p>
                 </div>
-              ))}
+              )}
             </div>
           </section>
         </div>

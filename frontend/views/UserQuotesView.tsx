@@ -5,9 +5,10 @@ import { Clock, FileText, Archive, CheckCircle, XCircle } from 'lucide-react';
 
 interface UserQuotesViewProps {
   onNavigate: (view: string) => void;
+  onQuoteSelect: (quote: any) => void;
 }
 
-export const UserQuotesView: React.FC<UserQuotesViewProps> = ({ onNavigate }) => {
+export const UserQuotesView: React.FC<UserQuotesViewProps> = ({ onNavigate, onQuoteSelect }) => {
   const [requests, setRequests] = useState<QuoteRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'requests' | 'quotes' | 'archive'>('quotes');
@@ -41,6 +42,14 @@ export const UserQuotesView: React.FC<UserQuotesViewProps> = ({ onNavigate }) =>
         const req = requests.find(r => r.id === q.quoteRequestId);
         return {
             ...q,
+            // Map backend fields to frontend interface
+            partsCostTotal: Number(q.partsEstimate || 0),
+            laborCostTotal: Number(q.laborEstimate || 0),
+            estimatedTotal: Number(q.totalEstimate || 0),
+            shopFees: 0,
+            taxes: 0,
+            lineItems: q.lineItems || [],
+            estimatedRange: q.estimatedRange || null,
             // @ts-ignore
             requestVehicle: req?.vehicle ? `${req.vehicle.year} ${req.vehicle.make} ${req.vehicle.model}` : 'Unknown Vehicle',
             // @ts-ignore
@@ -118,7 +127,7 @@ export const UserQuotesView: React.FC<UserQuotesViewProps> = ({ onNavigate }) =>
                             <div 
                             key={quote.id}
                             className="glass-card rounded-3xl p-6 border border-white/5 hover:border-primary/50 transition-all cursor-pointer group relative overflow-hidden"
-                            onClick={() => { /* Navigate to detail */ }}
+                            onClick={() => onQuoteSelect(quote)}
                             >
                                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                                     <FileText className="w-24 h-24 text-primary" />
@@ -158,7 +167,10 @@ export const UserQuotesView: React.FC<UserQuotesViewProps> = ({ onNavigate }) =>
                                     <div className="text-xs text-slate-400">
                                         Valid until {new Date(quote.validUntil).toLocaleDateString()}
                                     </div>
-                                    <button className="btn btn-sm btn-primary">View Offer</button>
+                                    <button className="btn btn-sm btn-primary" onClick={(e) => {
+                                        e.stopPropagation();
+                                        onQuoteSelect(quote);
+                                    }}>View Offer</button>
                                 </div>
                             </div>
                         ))}

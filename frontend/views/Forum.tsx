@@ -211,10 +211,29 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
     }
   };
 
-  const handleShopLinkClick = (shopId: string) => {
-    const shop = MOCK_SHOPS.find(s => s.id === shopId);
-    if (shop) {
-      onShopSelect(shop);
+  const handleShopLinkClick = async (shopId: string) => {
+    // 1. Try to find in MOCK_SHOPS first (legacy/dev)
+    const mockShop = MOCK_SHOPS.find(s => String(s.id) === String(shopId));
+    if (mockShop) {
+      onShopSelect(mockShop);
+      return;
+    }
+
+    // 2. Fetch from backend
+    try {
+      const { data } = await api.get(`/shops/${shopId}`);
+      if (data) {
+        onShopSelect({
+            ...data,
+            // Ensure compatibility (imageUrl vs image)
+            imageUrl: data.imageUrl || data.image,
+            image: data.imageUrl || data.image, 
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch shop details for navigation', error);
+      // Fallback: Try to construct a minimal shop object to at least open the profile
+      // This might fail if the profile component relies heavily on other fields
     }
   };
 

@@ -57,16 +57,73 @@ export const ShopChatInterface: React.FC = () => {
             const currentUserId = userStr ? JSON.parse(userStr).id : 0;
             
             const { data } = await api.get('/conversations');
-            // Transform: pick the "other" party as the 'user' property
+            
+            // Transform data
             const transformedConvos = data.map((c: any) => {
-                const otherUser = c.user1Id === currentUserId ? c.user2 : c.user1;
+                let participantName = 'Unknown';
+                let participantImage = undefined;
+                let participantId = 0;
+
+                // Logic matched from FloatingChat to handle Shop vs User
+                if (c.shop) {
+                    // If conversation is linked to a shop
+                    // If I am the shop owner, I see the User.
+                    // If I am the User, I see the Shop.
+                    
+                    // How to know if I am the shop owner? 
+                    // We can check if `c.shop.userId === currentUserId`.
+                    // BUT `c.shop` in list might not have userId if backend doesn't assume it.
+                    // However, `FloatingChat` logic used:
+                    // `const otherUser = c.user1Id === userId ? c.user2 : c.user1;`
+                    // And if `c.shop` exists, it constructed a shop object.
+                    
+                    // Wait, if I am the Shop Owner, I want to see the CUSTOMER (User).
+                    // If I am the Customer, I want to see the SHOP.
+                    
+                    // Let's look at `c.user1Id` and `c.user2Id`.
+                    const otherUser = c.user1Id === currentUserId ? c.user2 : c.user1;
+                    
+                    // Am I the owner of this shop? (Check if my ID matches one of the user IDs relative to the shop... wait)
+                    // The backend returns `shop: { userId: ... }` if we select it.
+                    // Let's assume for now:
+                    // If I am NOT the shop owner, show Shop details.
+                    // If I am the shop owner, show Customer details.
+                    
+                    // Simplified heuristic: 
+                    // If `c.shop.userId === currentUserId`, I am the shop. Show `otherUser`.
+                    // If `c.shop.userId !== currentUserId`, I am the customer. Show `c.shop`.
+                    
+                    // Note: `conversation.controller.ts` includes `shop: { userId: true ... }`. So we have it.
+                    
+                    if (c.shop.userId === currentUserId) {
+                         // I own the shop -> Show Customer
+                         participantName = otherUser?.name || 'Unknown User';
+                         participantImage = otherUser?.avatarUrl;
+                         participantId = otherUser?.id || 0;
+                    } else {
+                         // I am customer -> Show Shop
+                         participantName = c.shop.name;
+                         participantImage = c.shop.imageUrl || c.shop.image;
+                         participantId = c.shop.id; // Using Link to Shop ID? 
+                         // Note: The click handler sets `selectedConvoId` which is conversation ID. 
+                         // The UI display just needs name/avatar.
+                    }
+
+                } else {
+                    // User-to-User
+                    const otherUser = c.user1Id === currentUserId ? c.user2 : c.user1;
+                    participantName = otherUser?.name || 'Unknown User';
+                    participantImage = otherUser?.avatarUrl;
+                    participantId = otherUser?.id || 0;
+                }
+
                 return {
                     id: c.id,
                     lastMessageAt: c.lastMessageAt,
-                    user: {
-                        id: otherUser?.id || 0,
-                        name: otherUser?.name || 'Unknown User',
-                        avatarUrl: otherUser?.avatarUrl
+                    user: { // Keeping property name 'user' to verify minimal code change, but semantic is 'participant'
+                        id: participantId,
+                        name: participantName,
+                        avatarUrl: participantImage
                     },
                     messages: c.messages || []
                 };
@@ -234,7 +291,7 @@ export const ShopChatInterface: React.FC = () => {
         }
     };
     return (
-        <div className="flex h-[600px] glass-card rounded-2xl overflow-hidden border border-white/5">
+        <div className="flex h-full glass-card rounded-2xl overflow-hidden border border-white/5">
            {/* Sidebar */}
            <div className="w-1/3 border-r border-white/5 bg-slate-900/50 flex flex-col">
               <div className="p-4 border-b border-white/5">
@@ -245,7 +302,7 @@ export const ShopChatInterface: React.FC = () => {
                     <Search className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
                     <input 
                       type="text" 
-                      placeholder="Search customers..." 
+                      placeholder="Search..." 
                       className="input input-sm w-full bg-slate-800 pl-9 border-white/5 focus:outline-none"
                     />
                  </div>
@@ -282,8 +339,16 @@ export const ShopChatInterface: React.FC = () => {
                      {/* Chat Header */}
                      <div className="p-4 border-b border-white/5 bg-slate-900/50 flex justify-between items-center">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center">
-                                <User className="w-5 h-5 text-slate-400" />
+                            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden">
+                                {conversations.find(c => c.id === selectedConvoId)?.user.avatarUrl ? (
+                                    <img 
+                                        src={conversations.find(c => c.id === selectedConvoId)?.user.avatarUrl} 
+                                        alt="Avatar" 
+                                        className="w-full h-full object-cover"
+                                    />
+                                ) : (
+                                    <User className="w-5 h-5 text-slate-400" />
+                                )}
                             </div>
                             <div>
                                 <h3 className="font-bold">

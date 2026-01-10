@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserRole, Shop } from '../types';
 import { Home, Search, Calendar, MessageSquare, User, ShieldCheck, Wrench, Menu, X, ChevronDown, FileText } from 'lucide-react';
-import { FloatingChat } from './FloatingChat';
+// import { FloatingChat } from './FloatingChat'; // Removed as per request
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -31,7 +31,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
   return (
     <div className="flex flex-col h-screen bg-base-200 overflow-hidden font-sans">
       {/* Top Navigation */}
-      <div className="navbar bg-base-100/80 backdrop-blur-md border-b border-white/5 sticky top-0 z-50 px-6">
+      <div className="navbar bg-base-100/80 backdrop-blur-md border-b border-white/5 sticky top-0 z-[200] px-6">
         <div className="flex-1">
           <button 
             className="flex items-center gap-2 group"
@@ -69,7 +69,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
               <ChevronDown className="w-3 h-3 opacity-50" />
             </div>
             <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow-2xl bg-slate-900 border border-white/5 rounded-xl w-52 mt-4">
-              <li className="menu-title text-xs uppercase opacity-40">Switch Profile</li>
+              <li className="menu-title text-xs uppercase">Switch Profile</li>
               <li><button className="hover:text-primary" onClick={() => onRoleChange(UserRole.DRIVER)}>Vehicle Driver</button></li>
               <li><button className="hover:text-primary" onClick={() => onRoleChange(UserRole.SHOP)}>Mechanic Shop</button></li>
               <li><button className="hover:text-primary" onClick={() => onRoleChange(UserRole.ADMIN)}>Platform Admin</button></li>
@@ -144,15 +144,22 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-20">
-        <div className="max-w-6xl mx-auto pb-12">
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 md:pt-12 pb-20">
+        <div className="max-w-6xl mx-auto ">
            {children}
         </div>
       </main>
 
       {/* Floating Chat Widget */}
-      {currentRole !== UserRole.ADMIN && onOpenChat && (
-        <FloatingChat onOpenChat={onOpenChat} />
+      {/* Floating Chat Widget */}
+      {/* Floating Chat Widget - Direct Link */}
+      {currentRole !== UserRole.ADMIN && (
+        <button 
+          onClick={() => onNavigate('messages')}
+          className="fixed bottom-6 right-6 btn btn-circle btn-primary btn-lg shadow-2xl z-50 animate-in fade-in zoom-in hover:scale-110 border-2 border-white/20"
+        >
+          <MessageSquare className="w-8 h-8 text-black transition-transform group-hover:rotate-12" />
+        </button>
       )}
     </div>
   );

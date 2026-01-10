@@ -29,8 +29,8 @@ interface QuoteDetailViewProps {
 
 const getStatusIcon = (status: QuoteStatus) => {
   switch (status) {
-    case QuoteStatus.DRAFT: return <FileText className="w-5 h-5" />;
-    case QuoteStatus.SUBMITTED: return <Clock className="w-5 h-5 text-blue-400" />;
+    case QuoteStatus.PENDING: return <FileText className="w-5 h-5" />;
+    case QuoteStatus.QUOTED: return <Clock className="w-5 h-5 text-blue-400" />;
     case QuoteStatus.ACCEPTED: return <CheckCircle className="w-5 h-5 text-green-400" />;
     case QuoteStatus.REJECTED: return <XCircle className="w-5 h-5 text-red-400" />;
     case QuoteStatus.EXPIRED: return <AlertCircle className="w-5 h-5 text-yellow-400" />;
@@ -40,8 +40,8 @@ const getStatusIcon = (status: QuoteStatus) => {
 
 const getStatusColor = (status: QuoteStatus) => {
   switch (status) {
-    case QuoteStatus.DRAFT: return 'badge-ghost';
-    case QuoteStatus.SUBMITTED: return 'badge-info';
+    case QuoteStatus.PENDING: return 'badge-ghost';
+    case QuoteStatus.QUOTED: return 'badge-info';
     case QuoteStatus.ACCEPTED: return 'badge-success';
     case QuoteStatus.REJECTED: return 'badge-error';
     case QuoteStatus.EXPIRED: return 'badge-warning';
@@ -90,7 +90,7 @@ export const QuoteDetailView: React.FC<QuoteDetailViewProps> = ({
             <h1 className="text-3xl font-black uppercase italic tracking-tighter">
               Quote <span className="text-primary">Details</span>
             </h1>
-            <p className="text-slate-400">Quote #{quote.id.toUpperCase()}</p>
+            <p className="text-slate-400">Quote #{String(quote.id).toUpperCase()}</p>
           </div>
           <div className={`badge ${getStatusColor(quote.status)} gap-1 text-sm py-3 px-4`}>
             {getStatusIcon(quote.status)}
@@ -128,46 +128,50 @@ export const QuoteDetailView: React.FC<QuoteDetailViewProps> = ({
         <div className="lg:col-span-2 space-y-6">
           {/* Quote Summary */}
           <div className="glass-card rounded-2xl p-6 border border-white/5">
-            <h3 className="font-bold text-lg mb-4">Itemized Quote</h3>
-            
-            <div className="overflow-x-auto">
-              <table className="table table-zebra w-full">
-                <thead>
-                  <tr>
-                    <th>Description</th>
-                    <th className="text-right">Parts</th>
-                    <th className="text-right">Labor</th>
-                    <th className="text-right">Subtotal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {quote.lineItems.map(item => (
-                    <tr key={item.id}>
-                      <td>
-                        <p className="font-medium">{item.description}</p>
-                        {item.partSku && (
-                          <p className="text-xs text-slate-500">SKU: {item.partSku}</p>
-                        )}
-                      </td>
-                      <td className="text-right">{formatCurrency(item.partCost)}</td>
-                      <td className="text-right">
-                        {item.laborHours > 0 && (
-                          <span className="text-xs text-slate-400">
-                            {item.laborHours}hr × ${item.laborRate}
-                          </span>
-                        )}
-                        <br />
-                        {formatCurrency(item.laborHours * item.laborRate)}
-                      </td>
-                      <td className="text-right font-bold">{formatCurrency(item.subtotal)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {quote.lineItems && quote.lineItems.length > 0 && (
+              <>
+                <h3 className="font-bold text-lg mb-4">Itemized Quote</h3>
+                <div className="overflow-x-auto">
+                  <table className="table table-zebra w-full">
+                    <thead>
+                      <tr>
+                        <th>Description</th>
+                        <th className="text-right">Parts</th>
+                        <th className="text-right">Labor</th>
+                        <th className="text-right">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quote.lineItems.map(item => (
+                        <tr key={item.id}>
+                          <td>
+                            <p className="font-medium">{item.description}</p>
+                            {item.partSku && (
+                              <p className="text-xs text-slate-500">SKU: {item.partSku}</p>
+                            )}
+                          </td>
+                          <td className="text-right">{formatCurrency(item.partCost)}</td>
+                          <td className="text-right">
+                            {item.laborHours > 0 && (
+                              <span className="text-xs text-slate-400">
+                                {item.laborHours}hr × ${item.laborRate}
+                              </span>
+                            )}
+                            <br />
+                            {formatCurrency(item.laborHours * item.laborRate)}
+                          </td>
+                          <td className="text-right font-bold">{formatCurrency(item.subtotal)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
 
             {/* Totals */}
-            <div className="border-t border-white/5 mt-4 pt-4 space-y-2">
+            <h3 className="font-extrabold text-xl mb-2 uppercase tracking-wider">Service Fee Breakdown</h3>
+            <div className="border-t-2 border-white/10 mt-5 pt-5 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Parts Total</span>
                 <span>{formatCurrency(quote.partsCostTotal)}</span>
@@ -189,9 +193,11 @@ export const QuoteDetailView: React.FC<QuoteDetailViewProps> = ({
                 <span>Estimated Total</span>
                 <span className="text-primary">{formatCurrency(quote.estimatedTotal)}</span>
               </div>
-              <p className="text-xs text-slate-500">
-                Range: {formatCurrency(quote.estimatedRange.min)} - {formatCurrency(quote.estimatedRange.max)}
-              </p>
+              {quote.estimatedRange && (
+                <p className="text-xs text-slate-500">
+                  Range: {formatCurrency(quote.estimatedRange.min)} - {formatCurrency(quote.estimatedRange.max)}
+                </p>
+              )}
             </div>
           </div>
 
@@ -263,7 +269,7 @@ export const QuoteDetailView: React.FC<QuoteDetailViewProps> = ({
           </div>
 
           {/* Actions */}
-          {quote.status === QuoteStatus.SUBMITTED && (
+          {(quote.status === QuoteStatus.QUOTED || quote.status === QuoteStatus.PENDING) && (
             <div className="space-y-3">
               <button 
                 onClick={() => setShowAcceptModal(true)}

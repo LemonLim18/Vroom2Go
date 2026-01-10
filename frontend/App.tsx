@@ -17,6 +17,7 @@ import { VehicleProfileView } from './views/VehicleProfileView';
 import { CompareShopsView } from './views/CompareShopsView';
 import { QuoteRequestView } from './views/QuoteRequestView';
 import { QuoteDetailView } from './views/QuoteDetailView';
+import { MessagesView } from './views/MessagesView';
 import { JobProgressView } from './views/JobProgressView';
 import { FinalInvoiceView } from './views/FinalInvoiceView';
 import { AdminConsole } from './views/AdminConsole';
@@ -65,11 +66,47 @@ const ServiceDetails: React.FC<{service: Service, onBack: () => void, onCompare:
 );
 
 const App: React.FC = () => {
+  // Helper to get view from URL path
+  const getViewFromPath = () => {
+    const path = window.location.pathname.replace('/', '');
+    return path || 'home';
+  };
+
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.DRIVER);
-  const [currentView, setCurrentView] = useState<string>('home');
+  const [currentView, setCurrentView] = useState<string>(getViewFromPath());
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingMode, setOnboardingMode] = useState<'signup' | 'login'>('signup');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Sync URL path when view changes
+  useEffect(() => {
+    const newPath = `/${currentView}`;
+    if (window.location.pathname !== newPath) {
+      window.history.pushState(null, '', newPath);
+    }
+    localStorage.setItem('lastView', currentView);
+  }, [currentView]);
+
+  // Listen for browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const newView = getViewFromPath();
+      if (newView !== currentView) {
+        setCurrentView(newView);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentView]);
+
+  // Check for reset token from query params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('token')) {
+        setCurrentView('reset-password');
+        setIsLoading(false);
+    }
+  }, []);
 
   // Selection states
   const [selectedService, setSelectedService] = useState<Service | null>(null);
@@ -104,7 +141,9 @@ const App: React.FC = () => {
             if (parsedUser.role) {
                 const mappedRole = mapBackendRole(parsedUser.role);
                 setCurrentRole(mappedRole);
-                if (mappedRole === UserRole.SHOP && currentView === 'home') {
+                
+                // If shop, redirect to dashboard if not deeper in nav
+                if (mappedRole === UserRole.SHOP && (currentView === 'home' || currentView === '')) {
                     setCurrentView('dashboard');
                 }
             }
@@ -112,7 +151,7 @@ const App: React.FC = () => {
             console.error('Failed to parse stored user', e);
         }
       }
-
+            
       if (!token) {
         setShowOnboarding(true);
         setIsLoading(false);
@@ -128,7 +167,7 @@ const App: React.FC = () => {
         setCurrentRole(mappedRole);
         
         // If shop, redirect to dashboard if not deeper in nav
-        if (mappedRole === UserRole.SHOP && currentView === 'home') {
+        if (mappedRole === UserRole.SHOP && (currentView === 'home' || currentView === '')) {
           setCurrentView('dashboard');
         }
       } catch (error) {
@@ -142,15 +181,6 @@ const App: React.FC = () => {
     };
 
     checkAuth();
-  }, []);
-
-  // Check for reset token
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('token')) {
-        setCurrentView('reset-password');
-        setIsLoading(false);
-    }
   }, []);
 
   if (isLoading) {
@@ -377,7 +407,10 @@ const App: React.FC = () => {
       
       case 'quotes':
         return (
-          <UserQuotesView onNavigate={handleNavigate} />
+          <UserQuotesView 
+            onNavigate={handleNavigate} 
+            onQuoteSelect={(quote) => setSelectedQuote(quote)}
+          />
         );
       
       case 'bookings':
@@ -431,6 +464,25 @@ const App: React.FC = () => {
             onBack={() => handleNavigate('bookings')}
             onApprove={() => handleNavigate('bookings')}
             onDispute={() => handleNavigate('bookings')}
+          />
+        );
+
+      case 'messages':
+        return (
+          <MessagesView 
+            onSelectConversation={(shop) => {
+              setActiveChatShop(shop); // Reuse this state or create selectedChatShop
+              handleNavigate('chat');
+            }} 
+          />
+        );
+
+      case 'chat':
+        if (!activeChatShop) return <div onClick={() => handleNavigate('messages')}>No chat selected. Go back</div>;
+        return (
+          <ChatView 
+            shop={activeChatShop} 
+            onBack={() => handleNavigate('messages')} 
           />
         );
       

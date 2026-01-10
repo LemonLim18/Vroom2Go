@@ -49,23 +49,14 @@ export const createQuoteRequest = async (req: any, res: Response) => {
  */
 export const getDriverRequests = async (req: any, res: Response) => {
   try {
-    console.log('[DEBUG] getDriverRequests hit');
-    
     if (!req.user) {
-        console.error('[ERROR] No user in request');
         return res.status(401).json({ message: 'Not authenticated' });
     }
 
-    console.log(`[DEBUG] Raw User:`, req.user);
-    
-    let userId = parseInt(req.user.id);
+    const userId = parseInt(req.user.id);
     if (isNaN(userId)) {
-        console.error(`[ERROR] Invalid User ID: ${req.user.id}`);
-        // Fallback or fail
-        return res.status(400).json({ message: 'Invalid user ID ' + req.user.id });
+        return res.status(400).json({ message: 'Invalid user ID' });
     }
-
-    console.log(`[DEBUG] Querying requests for User ID: ${userId}`);
 
     const requests = await prisma.quoteRequest.findMany({
       where: { userId: userId },
@@ -82,14 +73,10 @@ export const getDriverRequests = async (req: any, res: Response) => {
       orderBy: { id: 'desc' }
     });
 
-    console.log(`[DEBUG] Found ${requests.length} requests`);
     res.json(requests);
   } catch (error: any) {
-    console.error('[CRITICAL ERROR] getDriverRequests crashed:', error);
-    res.status(500).json({ 
-        message: 'Internal Server Error', 
-        details: error.message 
-    });
+    console.error('Get driver requests error:', error);
+    res.status(500).json({ message: error.message });
   }
 };
 

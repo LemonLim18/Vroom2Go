@@ -31,13 +31,19 @@ export const register = async (req: Request, res: Response) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Map frontend 'DRIVER' role to backend 'OWNER' role
+    let dbRole = role;
+    if (role === 'DRIVER') {
+        dbRole = 'OWNER';
+    }
+
     // Create user
     const user = await prisma.user.create({
       data: {
         name,
         email,
         passwordHash: hashedPassword,
-        role: role || 'OWNER',
+        role: dbRole || 'OWNER',
       },
     });
 
@@ -67,6 +73,8 @@ export const register = async (req: Request, res: Response) => {
 
 // @desc    Authenticate a user
 // @route   POST /api/auth/login
+// @desc    Authenticate a user
+// @route   POST /api/auth/login
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -75,7 +83,7 @@ export const login = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({
       where: { email },
     });
-
+    
     if (user && (await bcrypt.compare(password, user.passwordHash))) {
       const shop = await prisma.shop.findFirst({ where: { userId: user.id } });
       

@@ -184,6 +184,29 @@ async function main() {
       }
     });
 
+    // 8. Create Reviews
+    console.log('⭐ Creating reviews...');
+    await prisma.review.create({
+      data: {
+        shopId: createdShops[0].id,
+        userId: createdUsers[0].id, // Alex
+        rating: 5,
+        comment: "Excellent service! They finished the oil change faster than expected.",
+        createdAt: new Date()
+      }
+    });
+    
+    await prisma.review.create({
+      data: {
+        shopId: createdShops[0].id,
+        userId: createdUsers[4].id, // Default User
+        rating: 4,
+        comment: "Good work but a bit pricey.",
+        createdAt: new Date(Date.now() - 86400000 * 5) // 5 days ago
+      }
+    });
+    console.log('✅ Created reviews');
+
     console.log('🏁 Seeding finished successfully!');
   } catch (error) {
     console.error('❌ Seeding failed:');
