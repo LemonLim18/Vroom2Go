@@ -16,7 +16,7 @@ const generateToken = (id: number, role: string) => {
 // @route   POST /api/auth/register
 export const register = async (req: Request, res: Response) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, phone, shopName, address } = req.body;
 
     // Check if user exists
     const userExists = await prisma.user.findUnique({
@@ -42,6 +42,7 @@ export const register = async (req: Request, res: Response) => {
       data: {
         name,
         email,
+        phone,
         passwordHash: hashedPassword,
         role: dbRole || 'OWNER',
       },
@@ -52,8 +53,8 @@ export const register = async (req: Request, res: Response) => {
       await prisma.shop.create({
         data: {
           userId: user.id,
-          name: `${user.name}'s Shop`, // Default name, can be updated later
-          address: 'Update your address',
+          name: shopName || `${user.name}'s Shop`, 
+          address: address || 'Update your address',
         }
       });
     }

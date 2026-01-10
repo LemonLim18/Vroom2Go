@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import api from '../services/api';
+import Swal from 'sweetalert2';
 import { ShopChatInterface } from '../components/ShopChatInterface';
 import { MOCK_BOOKINGS, MOCK_QUOTES, MOCK_QUOTE_REQUESTS } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
@@ -17,11 +19,12 @@ import {
   Send,
   XCircle,
   Users,
-  Wrench
+  Wrench,
+  BarChart as BarChartIcon
 } from 'lucide-react';
 import { ShopQuoteRequestsView } from './ShopQuoteRequestsView';
 
-type DashboardTab = 'overview' | 'messages' | 'quotes' | 'calendar' | 'analytics';
+type DashboardTab = 'overview' | 'messages' | 'quotes' | 'bookings' | 'reviews' | 'calendar' | 'analytics';
 
 const revenueData = [
   { name: 'Mon', revenue: 400 },
@@ -70,6 +73,174 @@ export const ShopDashboard: React.FC = () => {
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<typeof MOCK_QUOTE_REQUESTS[0] | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [quoteRequests, setQuoteRequests] = useState<any[]>([]);
+  const [shopMetrics, setShopMetrics] = useState({
+    weeklyRevenue: 0,
+    newBookings: 0,
+    pendingBookings: 0,
+    avgResponseMinutes: 0,
+    rating: 0,
+    reviewCount: 0
+  });
+  const [shopBookings, setShopBookings] = useState<any[]>([]);
+  const [updatingBookingId, setUpdatingBookingId] = useState<number | null>(null);
+  const [shopReviews, setShopReviews] = useState<any[]>([]);
+  const [respondingReviewId, setRespondingReviewId] = useState<number | null>(null);
+  const [responseText, setResponseText] = useState('');
+  
+  // Fetch real quote requests
+  React.useEffect(() => {
+      const fetchRequests = async () => {
+          try {
+              const { data } = await api.get('/quotes/requests/shop');
+              setQuoteRequests(data);
+          } catch (error) {
+              console.error('Failed to fetch quote requests', error);
+          }
+      };
+      fetchRequests();
+      
+      // Poll every 30s
+      const interval = setInterval(fetchRequests, 30000);
+      return () => clearInterval(interval);
+  }, []);
+
+  // Fetch shop analytics/metrics
+  React.useEffect(() => {
+      const fetchAnalytics = async () => {
+          try {
+              const { data } = await api.get('/shops/analytics');
+              setShopMetrics(data);
+          } catch (error) {
+              console.error('Failed to fetch shop analytics', error);
+          }
+      };
+      fetchAnalytics();
+  }, []);
+
+  // Fetch shop bookings
+  React.useEffect(() => {
+      const fetchBookings = async () => {
+          try {
+              const { data } = await api.get('/bookings');
+              setShopBookings(data);
+          } catch (error) {
+              console.error('Failed to fetch bookings', error);
+          }
+      };
+      fetchBookings();
+      
+      // Refresh every 60s
+      const interval = setInterval(fetchBookings, 60000);
+      return () => clearInterval(interval);
+  }, []);
+
+  // Fetch shop reviews
+  React.useEffect(() => {
+      const fetchReviews = async () => {
+          try {
+              // Get shop ID from current user's shop
+              const shopRes = await api.get('/shops/my');
+              if (shopRes.data?.id) {
+                  const { data } = await api.get(`/reviews/shop/${shopRes.data.id}`);
+                  setShopReviews(data.reviews || []);
+              }
+          } catch (error) {
+              console.error('Failed to fetch reviews', error);
+          }
+      };
+      fetchReviews();
+  }, []);
+
+  // Handle respond to review
+  const handleRespondToReview = async (reviewId: number) => {
+      if (!responseText.trim()) return;
+      try {
+          await api.put(`/reviews/${reviewId}/respond`, { response: responseText });
+          // Refresh reviews
+          const shopRes = await api.get('/shops/my');
+          if (shopRes.data?.id) {
+              const { data } = await api.get(`/reviews/shop/${shopRes.data.id}`);
+              setShopReviews(data.reviews || []);
+          }
+          setRespondingReviewId(null);
+          setResponseText('');
+          showToast('Response posted successfully!');
+      } catch (error) {
+          console.error('Failed to respond:', error);
+          showToast('Failed to post response');
+      }
+  };
+
+  // Update booking status
+  const handleUpdateBookingStatus = async (bookingId: number, newStatus: string) => {
+      // For COMPLETED status, show SweetAlert2 confirmation
+      if (newStatus === 'COMPLETED') {
+          const result = await Swal.fire({
+              title: 'Complete this service?',
+              text: 'This will mark the job as completed. The customer will be notified and can leave a review.',
+              icon: 'question',
+              showCancelButton: true,
+              confirmButtonColor: '#facc15',
+              cancelButtonColor: '#6b7280',
+              confirmButtonText: 'Yes, complete it!',
+              cancelButtonText: 'Not yet',
+              background: '#1e293b',
+              color: '#fff'
+          });
+          
+          if (!result.isConfirmed) {
+              return;
+          }
+      }
+      
+      // For CANCELLED status, also confirm
+      if (newStatus === 'CANCELLED') {
+          const result = await Swal.fire({
+              title: 'Decline this booking?',
+              text: 'The customer will be notified that the booking was declined.',
+              icon: 'warning',
+              showCancelButton: true,
+              confirmButtonColor: '#ef4444',
+              cancelButtonColor: '#6b7280',
+              confirmButtonText: 'Yes, decline',
+              cancelButtonText: 'Keep it',
+              background: '#1e293b',
+              color: '#fff'
+          });
+          
+          if (!result.isConfirmed) {
+              return;
+          }
+      }
+      
+      setUpdatingBookingId(bookingId);
+      try {
+          await api.put(`/bookings/${bookingId}/status`, { status: newStatus });
+          // Refresh bookings
+          const { data } = await api.get('/bookings');
+          setShopBookings(data);
+          
+          // Show success message
+          if (newStatus === 'COMPLETED') {
+              Swal.fire({
+                  title: 'Job Completed!',
+                  text: 'Great work! The customer has been notified.',
+                  icon: 'success',
+                  confirmButtonColor: '#facc15',
+                  background: '#1e293b',
+                  color: '#fff'
+              });
+          } else {
+              showToast(`Booking ${newStatus.toLowerCase().replace('_', ' ')} successfully!`);
+          }
+      } catch (error) {
+          console.error('Failed to update booking:', error);
+          showToast('Failed to update booking');
+      } finally {
+          setUpdatingBookingId(null);
+      }
+  };
 
   // Show toast notification
   const showToast = (message: string) => {
@@ -101,9 +272,11 @@ export const ShopDashboard: React.FC = () => {
   const tabs = [
     { id: 'overview' as const, label: 'Overview', icon: TrendingUp },
     { id: 'messages' as const, label: 'Messages', icon: MessageSquare },
-    { id: 'quotes' as const, label: 'Quote Requests', icon: FileText, badge: MOCK_QUOTE_REQUESTS.length },
-    { id: 'calendar' as const, label: 'Availability', icon: Calendar },
-    { id: 'analytics' as const, label: 'Analytics', icon: BarChart },
+    { id: 'quotes' as const, label: 'Quotes', icon: FileText, badge: quoteRequests.length },
+    { id: 'bookings' as const, label: 'Bookings', icon: Calendar, badge: shopBookings.filter(b => b.status === 'PENDING').length },
+    { id: 'reviews' as const, label: 'Reviews', icon: Star, badge: shopReviews.length },
+    { id: 'calendar' as const, label: 'Availability', icon: Clock },
+    { id: 'analytics' as const, label: 'Analytics', icon: BarChartIcon },
   ];
 
   return (
@@ -125,17 +298,17 @@ export const ShopDashboard: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="tabs tabs-boxed bg-slate-800/50 p-1 w-fit">
+      <div className="tabs tabs-boxed bg-slate-800/50 p-1 w-full overflow-x-auto flex-nowrap justify-start md:w-fit scrollbar-hide">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`tab gap-2 ${activeTab === tab.id ? 'tab-active bg-primary text-black' : ''}`}
+            className={`tab gap-2 h-auto py-2 min-h-[3rem] flex-shrink-0 ${activeTab === tab.id ? 'tab-active bg-primary text-black' : ''}`}
           >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-            {tab.badge && tab.badge > 0 && (
-              <span className="badge badge-error badge-xs">{tab.badge}</span>
+            <tab.icon className="w-4 h-4 flex-shrink-0" />
+            <span className="text-xs md:text-sm text-left">{tab.label}</span>
+            {(tab.badge || 0) > 0 && (
+              <span className="badge badge-error badge-xs flex-shrink-0">{tab.badge}</span>
             )}
           </button>
         ))}
@@ -151,10 +324,10 @@ export const ShopDashboard: React.FC = () => {
                 <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center">
                   <DollarSign className="w-5 h-5 text-green-400" />
                 </div>
-                <span className="text-xs text-green-400">↗ 14%</span>
+                {shopMetrics.weeklyRevenue > 0 && <span className="text-xs text-green-400">↗ Active</span>}
               </div>
               <p className="text-sm text-slate-400">Weekly Revenue</p>
-              <p className="text-2xl font-black">$3,700</p>
+              <p className="text-2xl font-black">${shopMetrics.weeklyRevenue.toLocaleString()}</p>
             </div>
 
             <div className="glass-card rounded-2xl p-5 border border-white/5">
@@ -162,10 +335,12 @@ export const ShopDashboard: React.FC = () => {
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
                   <Calendar className="w-5 h-5 text-primary" />
                 </div>
-                <span className="badge badge-warning badge-xs">4 pending</span>
+                {shopMetrics.pendingBookings > 0 && (
+                  <span className="badge badge-warning badge-xs">{shopMetrics.pendingBookings} pending</span>
+                )}
               </div>
               <p className="text-sm text-slate-400">New Bookings</p>
-              <p className="text-2xl font-black">12</p>
+              <p className="text-2xl font-black">{shopMetrics.newBookings}</p>
             </div>
 
             <div className="glass-card rounded-2xl p-5 border border-white/5">
@@ -173,10 +348,10 @@ export const ShopDashboard: React.FC = () => {
                 <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
                   <Clock className="w-5 h-5 text-blue-400" />
                 </div>
-                <span className="text-xs text-blue-400">Top 5%</span>
+                {shopMetrics.avgResponseMinutes < 30 && <span className="text-xs text-blue-400">Fast</span>}
               </div>
               <p className="text-sm text-slate-400">Avg Response</p>
-              <p className="text-2xl font-black">18m</p>
+              <p className="text-2xl font-black">{shopMetrics.avgResponseMinutes}m</p>
             </div>
 
             <div className="glass-card rounded-2xl p-5 border border-white/5">
@@ -184,9 +359,10 @@ export const ShopDashboard: React.FC = () => {
                 <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
                   <Star className="w-5 h-5 text-purple-400" />
                 </div>
+                {shopMetrics.reviewCount > 0 && <span className="text-xs text-slate-400">{shopMetrics.reviewCount} reviews</span>}
               </div>
               <p className="text-sm text-slate-400">Rating</p>
-              <p className="text-2xl font-black">4.9 ★</p>
+              <p className="text-2xl font-black">{shopMetrics.rating.toFixed(1)} ★</p>
             </div>
           </div>
 
@@ -239,7 +415,7 @@ export const ShopDashboard: React.FC = () => {
           </div>
 
           {/* Incoming Quote Requests */}
-          {MOCK_QUOTE_REQUESTS.length > 0 && (
+          {quoteRequests.length > 0 ? (
             <div className="glass-card rounded-2xl p-6 border border-primary/20 bg-primary/5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-bold text-lg flex items-center gap-2">
@@ -254,21 +430,31 @@ export const ShopDashboard: React.FC = () => {
                 </button>
               </div>
               <div className="flex gap-4 overflow-x-auto pb-2">
-                {MOCK_QUOTE_REQUESTS.slice(0, 3).map(request => (
+                {quoteRequests.slice(0, 3).map(request => (
                   <div key={request.id} className="bg-slate-800 rounded-xl p-4 min-w-[280px] flex-shrink-0">
                     <div className="flex justify-between items-start mb-2">
-                      <p className="font-bold">{request.vehicleInfo?.make} {request.vehicleInfo?.model}</p>
+                      <p className="font-bold">{request.vehicle?.make} {request.vehicle?.model}</p>
                       <span className="badge badge-warning badge-xs">{request.status}</span>
                     </div>
                     <p className="text-sm text-slate-400 line-clamp-2 mb-3">{request.description}</p>
                     <div className="flex gap-2">
-                      <button className="btn btn-xs btn-ghost gap-1"><Eye className="w-3 h-3" /> View</button>
-                      <button className="btn btn-xs btn-primary gap-1"><Send className="w-3 h-3" /> Quote</button>
+                      <button onClick={() => { setActiveTab('quotes'); }} className="btn btn-xs btn-ghost gap-1"><Eye className="w-3 h-3" /> View</button>
+                      <button onClick={() => { setActiveTab('quotes'); }} className="btn btn-xs btn-primary gap-1"><Send className="w-3 h-3" /> Quote</button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
+          ) : (
+             <div className="glass-card rounded-2xl p-6 border border-white/5 opacity-70 border-dashed">
+                <div className="flex items-center justify-center flex-col text-center py-4">
+                     <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mb-3">
+                         <FileText className="w-6 h-6 text-slate-500" />
+                     </div>
+                     <p className="font-bold text-slate-400">No New Requests</p>
+                     <p className="text-xs text-slate-500">You're all caught up!</p>
+                </div>
+             </div>
           )}
         </>
       )}
@@ -283,6 +469,293 @@ export const ShopDashboard: React.FC = () => {
       {/* Quotes Tab */}
       {activeTab === 'quotes' && (
         <ShopQuoteRequestsView />
+      )}
+
+      {/* Bookings Tab */}
+      {activeTab === 'bookings' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-lg">Manage Bookings</h3>
+            <div className="flex gap-2">
+              <span className="badge badge-warning gap-1">
+                {shopBookings.filter(b => b.status === 'PENDING').length} Pending
+              </span>
+              <span className="badge badge-info gap-1">
+                {shopBookings.filter(b => b.status === 'CONFIRMED').length} Confirmed
+              </span>
+              <span className="badge badge-primary gap-1">
+                {shopBookings.filter(b => b.status === 'IN_PROGRESS').length} In Progress
+              </span>
+            </div>
+          </div>
+
+          {shopBookings.length === 0 ? (
+            <div className="text-center py-20 border border-dashed border-white/5 rounded-3xl bg-slate-900/50">
+              <Calendar className="w-16 h-16 text-slate-600 mx-auto mb-4 opacity-50" />
+              <h3 className="text-xl font-bold text-slate-300">No bookings yet</h3>
+              <p className="text-slate-500">Incoming bookings will appear here</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {shopBookings.map((booking: any) => (
+                <div key={booking.id} className="glass-card rounded-2xl p-5 border border-white/5 hover:border-primary/30 transition-all">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    {/* Customer & Vehicle Info */}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`badge ${
+                          booking.status === 'PENDING' ? 'badge-warning' :
+                          booking.status === 'CONFIRMED' ? 'badge-info' :
+                          booking.status === 'IN_PROGRESS' ? 'badge-primary' :
+                          booking.status === 'COMPLETED' ? 'badge-success' : 'badge-ghost'
+                        }`}>
+                          {booking.status}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {new Date(booking.scheduledDate).toLocaleDateString()} @ {new Date(booking.scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {/* Customer Name */}
+                      {booking.user && (
+                        <p className="text-sm text-primary font-medium mb-1">
+                          <Users className="w-3 h-3 inline mr-1" />
+                          {booking.user.name}
+                        </p>
+                      )}
+                      <h4 className="font-bold">
+                        {booking.vehicle?.year} {booking.vehicle?.make} {booking.vehicle?.model}
+                      </h4>
+                      <p className="text-sm text-slate-400">
+                        {booking.vehicle?.licensePlate && `Plate: ${booking.vehicle.licensePlate}`}
+                      </p>
+                      {booking.notes && (
+                        <p className="text-sm text-slate-500 mt-1">Notes: {booking.notes}</p>
+                      )}
+                    </div>
+
+                    {/* Status Selector & Actions */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Status Dropdown */}
+                      {booking.status !== 'COMPLETED' && booking.status !== 'CANCELLED' && (
+                        <select
+                          className="select select-bordered select-sm bg-slate-800 border-white/10 min-w-[140px]"
+                          value={booking.status}
+                          disabled={updatingBookingId === booking.id}
+                          onChange={(e) => handleUpdateBookingStatus(booking.id, e.target.value)}
+                        >
+                          <option value="PENDING">⏳ Pending</option>
+                          <option value="CONFIRMED">✅ Confirmed</option>
+                          <option value="IN_PROGRESS">🔧 In Progress</option>
+                          <option value="COMPLETED">✔️ Completed</option>
+                          <option value="CANCELLED">❌ Cancelled</option>
+                        </select>
+                      )}
+                      
+                      {/* Quick Action Buttons */}
+                      {booking.status === 'PENDING' && (
+                        <>
+                          <button
+                            onClick={() => handleUpdateBookingStatus(booking.id, 'CONFIRMED')}
+                            disabled={updatingBookingId === booking.id}
+                            className="btn btn-success btn-sm gap-1"
+                          >
+                            {updatingBookingId === booking.id ? (
+                              <span className="loading loading-spinner loading-xs" />
+                            ) : (
+                              <CheckCircle className="w-4 h-4" />
+                            )}
+                            Confirm
+                          </button>
+                          <button
+                            onClick={() => handleUpdateBookingStatus(booking.id, 'CANCELLED')}
+                            disabled={updatingBookingId === booking.id}
+                            className="btn btn-ghost btn-sm text-error"
+                          >
+                            <XCircle className="w-4 h-4" /> Decline
+                          </button>
+                        </>
+                      )}
+                      {booking.status === 'CONFIRMED' && (
+                        <button
+                          onClick={() => handleUpdateBookingStatus(booking.id, 'IN_PROGRESS')}
+                          disabled={updatingBookingId === booking.id}
+                          className="btn btn-primary btn-sm gap-1"
+                        >
+                          {updatingBookingId === booking.id ? (
+                            <span className="loading loading-spinner loading-xs" />
+                          ) : (
+                            <Wrench className="w-4 h-4" />
+                          )}
+                          Start Job
+                        </button>
+                      )}
+                      {booking.status === 'IN_PROGRESS' && (
+                        <button
+                          onClick={() => handleUpdateBookingStatus(booking.id, 'COMPLETED')}
+                          disabled={updatingBookingId === booking.id}
+                          className="btn btn-success btn-sm gap-1"
+                        >
+                          {updatingBookingId === booking.id ? (
+                            <span className="loading loading-spinner loading-xs" />
+                          ) : (
+                            <CheckCircle className="w-4 h-4" />
+                          )}
+                          Complete
+                        </button>
+                      )}
+                      
+                      {/* Completed/Cancelled Badge */}
+                      {booking.status === 'COMPLETED' && (
+                        <span className="badge badge-success gap-1">
+                          <CheckCircle className="w-3 h-3" /> Completed
+                        </span>
+                      )}
+                      {booking.status === 'CANCELLED' && (
+                        <span className="badge badge-error gap-1">
+                          <XCircle className="w-3 h-3" /> Cancelled
+                        </span>
+                      )}
+                      
+                      {/* Message Button */}
+                      {booking.userId && (
+                        <button 
+                          onClick={() => window.location.href = `/messages?userId=${booking.userId}`}
+                          className="btn btn-ghost btn-sm"
+                        >
+                          <MessageSquare className="w-4 h-4" /> Message
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Reviews Tab */}
+      {activeTab === 'reviews' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-lg">Customer Reviews</h3>
+            <div className="flex gap-2">
+              <span className="badge badge-primary gap-1">
+                {shopReviews.length} Total
+              </span>
+            </div>
+          </div>
+
+          {shopReviews.length === 0 ? (
+            <div className="text-center py-20 border border-dashed border-white/5 rounded-3xl bg-slate-900/50">
+              <Star className="w-16 h-16 text-slate-600 mx-auto mb-4 opacity-50" />
+              <h3 className="text-xl font-bold text-slate-300">No reviews yet</h3>
+              <p className="text-slate-500">Customer reviews will appear here</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {shopReviews.map((review: any) => {
+                const authorName = review.user?.name || 'Anonymous';
+                const authorAvatar = review.user?.avatarUrl;
+                const reviewImages = Array.isArray(review.images) ? review.images : [];
+                const serviceName = review.booking?.service?.name;
+
+                return (
+                  <div key={review.id} className="glass-card rounded-2xl p-5 border border-white/5">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="avatar placeholder">
+                          {authorAvatar ? (
+                            <div className="w-12 rounded-xl overflow-hidden">
+                              <img src={authorAvatar.startsWith('http') ? authorAvatar : `http://localhost:5000${authorAvatar}`} alt={authorName} />
+                            </div>
+                          ) : (
+                            <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-12 font-black">
+                              <span>{authorName.charAt(0)}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold">{authorName}</div>
+                          <div className="text-xs text-slate-500">{new Date(review.createdAt).toLocaleDateString()}</div>
+                          {serviceName && (
+                            <div className="badge badge-ghost badge-xs mt-1">{serviceName}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex text-primary">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className={`w-4 h-4 ${i < review.rating ? 'fill-current' : 'text-slate-700'}`} />
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {review.comment && (
+                      <p className="text-slate-300 mb-4">"{review.comment}"</p>
+                    )}
+                    
+                    {/* Review Images */}
+                    {reviewImages.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {reviewImages.map((img: string, idx: number) => (
+                          <img 
+                            key={idx}
+                            src={img.startsWith('http') ? img : `http://localhost:5000${img}`}
+                            alt={`Review photo ${idx + 1}`}
+                            className="w-20 h-20 object-cover rounded-lg border border-white/10"
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Shop Response */}
+                    {review.shopResponse ? (
+                      <div className="ml-6 pl-4 border-l-2 border-primary/50 mt-4">
+                        <p className="text-xs text-primary font-bold mb-1">Your Response</p>
+                        <p className="text-sm text-slate-400">{review.shopResponse}</p>
+                      </div>
+                    ) : (
+                      <div className="mt-4">
+                        {respondingReviewId === review.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              className="textarea textarea-bordered bg-slate-800 border-white/10 w-full h-20 resize-none"
+                              placeholder="Write your response..."
+                              value={responseText}
+                              onChange={(e) => setResponseText(e.target.value)}
+                            />
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => handleRespondToReview(review.id)}
+                                className="btn btn-primary btn-sm"
+                                disabled={!responseText.trim()}
+                              >
+                                Post Response
+                              </button>
+                              <button 
+                                onClick={() => { setRespondingReviewId(null); setResponseText(''); }}
+                                className="btn btn-ghost btn-sm"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => setRespondingReviewId(review.id)}
+                            className="btn btn-ghost btn-sm gap-1"
+                          >
+                            <MessageSquare className="w-4 h-4" /> Respond
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Calendar Tab */}

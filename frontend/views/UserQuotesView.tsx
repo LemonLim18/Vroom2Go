@@ -34,9 +34,17 @@ export const UserQuotesView: React.FC<UserQuotesViewProps> = ({ onNavigate, onQu
 
   // Filter Data
   console.log('UserQuotesView Requests:', requests); // Debug frontend data
-  const activeRequests = requests.filter(r => r.status === 'OPEN' || r.status.toUpperCase() === 'OPEN');
   
-  const activeQuotes = requests.flatMap(r => r.quotes || [])
+  // Open Requests: OPEN status AND no quotes received yet
+  const activeRequests = requests.filter(r => 
+    (r.status === 'OPEN' || r.status.toUpperCase() === 'OPEN') && 
+    (!r.quotes || r.quotes.length === 0)
+  );
+  
+  // Requests that have received quotes (for display in Received Quotes tab)
+  const requestsWithQuotes = requests.filter(r => r.quotes && r.quotes.length > 0);
+  
+  const activeQuotes = requestsWithQuotes.flatMap(r => r.quotes || [])
     .filter((q: any) => q.status === 'QUOTED' || q.status === 'PENDING')
     .map((q: any) => {
         const req = requests.find(r => r.id === q.quoteRequestId);
@@ -57,9 +65,25 @@ export const UserQuotesView: React.FC<UserQuotesViewProps> = ({ onNavigate, onQu
         };
     });
 
+  // History/Archive: 
+  // - Requests with status CLOSED or EXPIRED
+  // - Requests that have received quotes (moved from Open)
+  // - Quotes with status REJECTED, EXPIRED, or ACCEPTED
   const archivedItems = [
+      // Closed/Expired requests
       ...requests.filter(r => r.status === 'CLOSED' || r.status === 'EXPIRED')
-          .map(r => ({ ...r, type: 'REQUEST' })),
+          .map(r => ({ ...r, type: 'REQUEST', archiveReason: r.status })),
+      // Requests that received quotes (marked as done)
+      ...requestsWithQuotes
+          .filter(r => r.status === 'OPEN') // Only if still OPEN (not already closed)
+          .map(r => ({ 
+              ...r, 
+              type: 'REQUEST', 
+              archiveReason: 'QUOTED',
+              // @ts-ignore
+              quoteCount: r.quotes?.length || 0
+          })),
+      // Individual quotes that are done
       ...requests.flatMap(r => r.quotes || [])
           .filter((q: any) => q.status === 'REJECTED' || q.status === 'EXPIRED' || q.status === 'ACCEPTED')
           .map((q: any) => {
@@ -106,7 +130,7 @@ export const UserQuotesView: React.FC<UserQuotesViewProps> = ({ onNavigate, onQu
       <div className="flex flex-wrap gap-2">
           <TabButton id="quotes" label="Received Quotes" icon={FileText} count={activeQuotes.length} />
           <TabButton id="requests" label="Open Requests" icon={Clock} count={activeRequests.length} />
-          <TabButton id="archive" label="History" icon={Archive} count={0} />
+          <TabButton id="archive" label="History" icon={Archive} count={archivedItems.length} />
       </div>
 
       {loading ? (

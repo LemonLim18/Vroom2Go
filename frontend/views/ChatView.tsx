@@ -229,7 +229,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
                     <h3 className="font-black italic uppercase tracking-tighter text-lg leading-none">{shop.name}</h3>
                     <div className="flex items-center gap-1 mt-1">
                       <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></div>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Mechanic Online</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Online</p>
                     </div>
                 </div>
             </div>

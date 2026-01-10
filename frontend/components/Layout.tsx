@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserRole, Shop } from '../types';
 import { Home, Search, Calendar, MessageSquare, User, ShieldCheck, Wrench, Menu, X, ChevronDown, FileText } from 'lucide-react';
-// import { FloatingChat } from './FloatingChat'; // Removed as per request
+import { FloatingChat } from './FloatingChat';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -21,7 +21,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
     { id: 'dashboard', label: 'Garage', icon: Wrench, roles: [UserRole.SHOP] },
     { id: 'admin', label: 'HQ', icon: ShieldCheck, roles: [UserRole.ADMIN] },
     { id: 'quotes', label: 'Quotes', icon: FileText, roles: [UserRole.DRIVER] },
-    { id: 'bookings', label: 'Bookings', icon: Calendar, roles: [UserRole.DRIVER, UserRole.SHOP] },
+    { id: 'bookings', label: 'Bookings', icon: Calendar, roles: [UserRole.DRIVER] },
     { id: 'forum', label: 'Forum', icon: MessageSquare, roles: [UserRole.DRIVER, UserRole.SHOP] },
     { id: 'profile', label: 'Profile', icon: User, roles: [UserRole.DRIVER, UserRole.SHOP, UserRole.ADMIN] },
   ];
@@ -152,14 +152,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
 
       {/* Floating Chat Widget */}
       {/* Floating Chat Widget */}
-      {/* Floating Chat Widget - Direct Link */}
+      {/* Floating Chat Widget */}
       {currentRole !== UserRole.ADMIN && (
-        <button 
-          onClick={() => onNavigate('messages')}
-          className="fixed bottom-6 right-6 btn btn-circle btn-primary btn-lg shadow-2xl z-50 animate-in fade-in zoom-in hover:scale-110 border-2 border-white/20"
-        >
-          <MessageSquare className="w-8 h-8 text-black transition-transform group-hover:rotate-12" />
-        </button>
+        <FloatingChat 
+          onOpenChat={(shop) => onOpenChat ? onOpenChat(shop) : onNavigate('messages')}
+          onViewAll={() => onNavigate('messages')}
+        />
       )}
     </div>
   );

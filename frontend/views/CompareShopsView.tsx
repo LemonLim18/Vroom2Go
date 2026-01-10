@@ -42,8 +42,8 @@ export const CompareShopsView: React.FC<CompareShopsViewProps> = ({
   const service = serviceId ? MOCK_SERVICES.find(s => s.id === serviceId) : null;
 
   // Get quotes for comparison if available
-  const getShopQuote = (shopId: string): Quote | undefined => {
-    return MOCK_QUOTES.find(q => q.shopId === shopId);
+  const getShopQuote = (shopId: string | number): Quote | undefined => {
+    return MOCK_QUOTES.find(q => q.shopId === String(shopId));
   };
 
   const addShop = (shop: Shop) => {
@@ -53,7 +53,7 @@ export const CompareShopsView: React.FC<CompareShopsViewProps> = ({
     setShowShopPicker(false);
   };
 
-  const removeShop = (shopId: string) => {
+  const removeShop = (shopId: string | number) => {
     setSelectedShops(prev => prev.filter(s => s.id !== shopId));
   };
 

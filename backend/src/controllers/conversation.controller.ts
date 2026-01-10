@@ -13,6 +13,11 @@ export const getOrCreateConversation = async (req: any, res: Response) => {
     const myId = req.user.id;
     const targetUserId = parseInt(req.params.userId);
 
+    // Validate targetUserId
+    if (isNaN(targetUserId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+    }
+
     if (myId === targetUserId) {
         return res.status(400).json({ message: "Cannot message yourself" });
     }
@@ -238,6 +243,11 @@ export const sendMessageToUser = async (req: any, res: Response) => {
         const myId = req.user.id;
         const targetUserId = parseInt(req.params.userId);
         const { text, attachmentUrl } = req.body;
+
+        // Validate targetUserId
+        if (isNaN(targetUserId)) {
+            return res.status(400).json({ message: "Invalid user ID" });
+        }
 
         if (myId === targetUserId) return res.status(400).json({message: "Cannot message self"});
 

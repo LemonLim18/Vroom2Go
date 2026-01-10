@@ -14,6 +14,7 @@ import conversationRoutes from './routes/conversation.routes';
 import forumRoutes from './routes/forum.routes';
 import quoteRoutes from './routes/quote.routes';
 import uploadRoutes from './routes/upload.routes';
+import reviewRoutes from './routes/review.routes';
 
 const app: Application = express();
 
@@ -64,6 +65,7 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/forum', forumRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

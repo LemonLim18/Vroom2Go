@@ -79,6 +79,56 @@ router.post('/chat', protect, upload.single('file'), (req: Request, res: Respons
     }
 });
 
+// Ensure reviews upload directory exists
+const reviewsDir = path.join(__dirname, '../../uploads/reviews');
+if (!fs.existsSync(reviewsDir)) {
+    fs.mkdirSync(reviewsDir, { recursive: true });
+}
+
+// Configure storage for review images
+const reviewStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, reviewsDir);
+    },
+    filename: (_req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        cb(null, `review-${uniqueSuffix}${ext}`);
+    }
+});
+
+const reviewUpload = multer({
+    storage: reviewStorage,
+    fileFilter,
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit for review images
+});
+
+/**
+ * @desc    Upload an image for reviews
+ * @route   POST /api/upload/image
+ * @access  Protected
+ */
+router.post('/image', protect, reviewUpload.single('image'), (req: Request, res: Response) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No image uploaded' });
+        }
+
+        const fileUrl = `/uploads/reviews/${req.file.filename}`;
+        
+        res.json({
+            success: true,
+            url: fileUrl,
+            filename: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size
+        });
+    } catch (error: any) {
+        console.error('Image upload error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
 // Error handling middleware for multer errors
 router.use((error: any, _req: Request, res: Response, next: Function) => {
     if (error instanceof multer.MulterError) {

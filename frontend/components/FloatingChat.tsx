@@ -56,15 +56,19 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAl
 
               if (c.shop) {
                    const otherUser = c.user1Id === userId ? c.user2 : c.user1;
+                   // If I am the shop owner, show the customer's info
+                   // If I am the customer, show the shop's info
+                   const isMyShop = c.shop.userId === userId;
+                   
                    shopData = {
                        id: c.shop.id,
-                       name: c.shop.name,
-                       imageUrl: c.shop.imageUrl,
+                       name: isMyShop ? otherUser.name : c.shop.name,
+                       imageUrl: isMyShop ? otherUser.avatarUrl : c.shop.imageUrl,
                        userId: otherUser.id,
                        rating: 5,
                        reviewCount: 0,
-                       address: 'Online',
-                       verified: true
+                       address: isMyShop ? 'Customer' : 'Online',
+                       verified: isMyShop ? false : true
                    };
               } else {
                   const otherUser = c.user1Id === userId ? c.user2 : c.user1;

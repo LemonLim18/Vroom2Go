@@ -291,7 +291,7 @@ export const ShopChatInterface: React.FC = () => {
         }
     };
     return (
-        <div className="flex h-full glass-card rounded-2xl overflow-hidden border border-white/5">
+        <div className="flex h-full min-h-[520px] glass-card rounded-2xl overflow-hidden border border-white/5">
            {/* Sidebar */}
            <div className="w-1/3 border-r border-white/5 bg-slate-900/50 flex flex-col">
               <div className="p-4 border-b border-white/5">

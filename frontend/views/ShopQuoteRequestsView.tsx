@@ -17,10 +17,13 @@ interface ShopQuoteRequestsViewProps {
   onBack?: () => void;
 }
 
+type RequestTab = 'open' | 'responded' | 'won';
+
 export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ onBack }) => {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState<RequestTab>('open');
 
   // Quote Form State
   const [quoteForm, setQuoteForm] = useState({
@@ -33,12 +36,20 @@ export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ on
 
   useEffect(() => {
     fetchRequests();
-  }, []);
+  }, [activeTab]);
 
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const { data } = await api.get('/quotes/requests/shop');
+      setSelectedRequest(null);
+      
+      let endpoint = '/quotes/requests/shop';
+      if (activeTab === 'responded') {
+        endpoint = '/quotes/requests/shop/responded';
+      }
+      // 'won' tab would need a different endpoint - for now show responded
+      
+      const { data } = await api.get(endpoint);
       setRequests(data);
     } catch (error) {
       console.error('Failed to fetch requests', error);
@@ -72,7 +83,8 @@ export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ on
       });
       
       setSelectedRequest(null);
-      fetchRequests(); // Refresh list (maybe remove the responded one if desired)
+      setQuoteForm({ description: '', partsEstimate: '', laborEstimate: '', totalEstimate: '', validUntil: '' });
+      fetchRequests(); // Refresh - request will move to 'responded' tab
     } catch (error: any) {
       Swal.fire({
         icon: 'error',
@@ -82,6 +94,10 @@ export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ on
         color: '#fff'
       });
     }
+  };
+
+  const handleTabChange = (tab: RequestTab) => {
+    setActiveTab(tab);
   };
 
   return (
@@ -94,9 +110,24 @@ export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ on
           <p className="text-slate-400">Review vehicle issues and send quotes to potential customers</p>
         </div>
         <div className="join">
-          <button className="btn btn-active join-item">Open</button>
-          <button className="btn join-item">Responded</button>
-          <button className="btn join-item">Won</button>
+          <button 
+            className={`btn join-item ${activeTab === 'open' ? 'btn-active btn-primary' : ''}`}
+            onClick={() => handleTabChange('open')}
+          >
+            Open
+          </button>
+          <button 
+            className={`btn join-item ${activeTab === 'responded' ? 'btn-active btn-primary' : ''}`}
+            onClick={() => handleTabChange('responded')}
+          >
+            Responded
+          </button>
+          <button 
+            className={`btn join-item ${activeTab === 'won' ? 'btn-active btn-primary' : ''}`}
+            onClick={() => handleTabChange('won')}
+          >
+            Won
+          </button>
         </div>
       </div>
 
@@ -216,79 +247,149 @@ export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ on
                 </div>
               </div>
 
-              {/* Quote Form */}
+              {/* Quote Form / Quote Summary */}
               <div className="mt-auto bg-slate-900 rounded-2xl p-6 border border-white/10">
-                <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                  <DollarSign className="w-5 h-5 text-success" /> Prepare Quote
-                </h3>
-                
-                <form onSubmit={handleSubmitQuote} className="space-y-4">
-                    <div className="form-control">
-                        <label className="label text-xs uppercase font-bold text-slate-500">Scope of Work</label>
-                        <textarea 
-                            className="textarea textarea-bordered bg-base-100" 
-                            placeholder="Describe the parts and labor required..."
-                            value={quoteForm.description}
-                            onChange={e => setQuoteForm({...quoteForm, description: e.target.value})}
-                            required
-                        ></textarea>
-                    </div>
+                {activeTab === 'open' ? (
+                  <>
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                      <DollarSign className="w-5 h-5 text-success" /> Prepare Quote
+                    </h3>
                     
-                    <div className="grid grid-cols-3 gap-4">
+                    <form onSubmit={handleSubmitQuote} className="space-y-4">
                         <div className="form-control">
-                            <label className="label text-xs uppercase font-bold text-slate-500">Parts ($)</label>
-                            <input 
-                                type="number" 
-                                className="input input-bordered bg-base-100" 
-                                placeholder="0.00"
-                                value={quoteForm.partsEstimate}
-                                onChange={e => setQuoteForm({...quoteForm, partsEstimate: e.target.value})}
-                                onBlur={calculateTotal}
-                                step="0.01"
-                            />
-                        </div>
-                        <div className="form-control">
-                            <label className="label text-xs uppercase font-bold text-slate-500">Labor ($)</label>
-                            <input 
-                                type="number" 
-                                className="input input-bordered bg-base-100" 
-                                placeholder="0.00"
-                                value={quoteForm.laborEstimate}
-                                onChange={e => setQuoteForm({...quoteForm, laborEstimate: e.target.value})}
-                                onBlur={calculateTotal}
-                                step="0.01"
-                            />
-                        </div>
-                        <div className="form-control">
-                            <label className="label text-xs uppercase font-bold text-success">Total ($)</label>
-                            <input 
-                                type="number" 
-                                className="input input-bordered bg-base-100 font-bold text-success" 
-                                placeholder="0.00"
-                                value={quoteForm.totalEstimate}
-                                onChange={e => setQuoteForm({...quoteForm, totalEstimate: e.target.value})}
-                                step="0.01"
+                            <label className="label text-xs uppercase font-bold text-slate-500">Scope of Work</label>
+                            <textarea 
+                                className="textarea textarea-bordered bg-base-100" 
+                                placeholder="Describe the parts and labor required..."
+                                value={quoteForm.description}
+                                onChange={e => setQuoteForm({...quoteForm, description: e.target.value})}
                                 required
-                            />
+                            ></textarea>
                         </div>
-                    </div>
+                        
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="form-control">
+                                <label className="label text-xs uppercase font-bold text-slate-500">Parts ($)</label>
+                                <input 
+                                    type="number" 
+                                    className="input input-bordered bg-base-100" 
+                                    placeholder="0.00"
+                                    value={quoteForm.partsEstimate}
+                                    onChange={e => setQuoteForm({...quoteForm, partsEstimate: e.target.value})}
+                                    onBlur={calculateTotal}
+                                    step="0.01"
+                                />
+                            </div>
+                            <div className="form-control">
+                                <label className="label text-xs uppercase font-bold text-slate-500">Labor ($)</label>
+                                <input 
+                                    type="number" 
+                                    className="input input-bordered bg-base-100" 
+                                    placeholder="0.00"
+                                    value={quoteForm.laborEstimate}
+                                    onChange={e => setQuoteForm({...quoteForm, laborEstimate: e.target.value})}
+                                    onBlur={calculateTotal}
+                                    step="0.01"
+                                />
+                            </div>
+                            <div className="form-control">
+                                <label className="label text-xs uppercase font-bold text-success">Total ($)</label>
+                                <input 
+                                    type="number" 
+                                    className="input input-bordered bg-base-100 font-bold text-success" 
+                                    placeholder="0.00"
+                                    value={quoteForm.totalEstimate}
+                                    onChange={e => setQuoteForm({...quoteForm, totalEstimate: e.target.value})}
+                                    step="0.01"
+                                    required
+                                />
+                            </div>
+                        </div>
 
-                    <div className="flex items-center gap-4 mt-2">
-                        <div className="flex-1">
-                             <label className="label text-xs uppercase font-bold text-slate-500">Valid Until</label>
-                             <input 
-                                type="date"
-                                className="input input-bordered bg-base-100 w-full"
-                                value={quoteForm.validUntil}
-                                onChange={e => setQuoteForm({...quoteForm, validUntil: e.target.value})}
-                                required
-                             />
+                        <div className="flex items-center gap-4 mt-2">
+                            <div className="flex-1">
+                                 <label className="label text-xs uppercase font-bold text-slate-500">Valid Until</label>
+                                 <input 
+                                    type="date"
+                                    className="input input-bordered bg-base-100 w-full"
+                                    value={quoteForm.validUntil}
+                                    onChange={e => setQuoteForm({...quoteForm, validUntil: e.target.value})}
+                                    required
+                                 />
+                            </div>
+                            <button type="submit" className="btn btn-primary gap-2 mt-8 flex-1">
+                                <CheckCircle className="w-5 h-5" /> Send Quote
+                            </button>
                         </div>
-                        <button type="submit" className="btn btn-primary gap-2 mt-8 flex-1">
-                            <CheckCircle className="w-5 h-5" /> Send Quote
-                        </button>
-                    </div>
-                </form>
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    {/* Read-only Quote Summary for Responded/Won tabs */}
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-success" /> Quote Submitted
+                    </h3>
+                    
+                    {selectedRequest.quote ? (
+                      <div className="space-y-4">
+                        {/* Quote Description */}
+                        {selectedRequest.quote.description && (
+                          <div>
+                            <p className="text-xs uppercase font-bold text-slate-500 mb-1">Scope of Work</p>
+                            <p className="text-sm text-slate-300 bg-slate-800/50 p-3 rounded-lg border border-white/5">
+                              {selectedRequest.quote.description}
+                            </p>
+                          </div>
+                        )}
+                        
+                        {/* Price Breakdown */}
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="bg-slate-800/50 p-4 rounded-xl border border-white/5 text-center">
+                            <p className="text-xs uppercase font-bold text-slate-500 mb-1">Parts</p>
+                            <p className="text-xl font-bold text-white">
+                              ${parseFloat(selectedRequest.quote.partsEstimate || 0).toFixed(2)}
+                            </p>
+                          </div>
+                          <div className="bg-slate-800/50 p-4 rounded-xl border border-white/5 text-center">
+                            <p className="text-xs uppercase font-bold text-slate-500 mb-1">Labor</p>
+                            <p className="text-xl font-bold text-white">
+                              ${parseFloat(selectedRequest.quote.laborEstimate || 0).toFixed(2)}
+                            </p>
+                          </div>
+                          <div className="bg-primary/10 p-4 rounded-xl border border-primary/30 text-center">
+                            <p className="text-xs uppercase font-bold text-primary mb-1">Total</p>
+                            <p className="text-2xl font-black text-primary">
+                              ${parseFloat(selectedRequest.quote.totalEstimate || 0).toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Quote Status and Dates */}
+                        <div className="flex flex-wrap gap-4 pt-2">
+                          <div className="flex items-center gap-2 text-sm text-slate-400">
+                            <Calendar className="w-4 h-4" />
+                            <span>Sent: {new Date(selectedRequest.quote.createdAt).toLocaleDateString()}</span>
+                          </div>
+                          {selectedRequest.quote.validUntil && (
+                            <div className="flex items-center gap-2 text-sm text-slate-400">
+                              <Clock className="w-4 h-4" />
+                              <span>Valid until: {new Date(selectedRequest.quote.validUntil).toLocaleDateString()}</span>
+                            </div>
+                          )}
+                          <span className={`badge ${
+                            selectedRequest.quote.status === 'ACCEPTED' ? 'badge-success' :
+                            selectedRequest.quote.status === 'DECLINED' ? 'badge-error' :
+                            'badge-warning'
+                          }`}>
+                            {selectedRequest.quote.status}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-slate-500 text-sm">No quote data available</p>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           ) : (

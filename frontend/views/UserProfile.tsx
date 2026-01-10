@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { MOCK_VEHICLES, MOCK_BOOKINGS, MOCK_USERS } from '../constants';
+import { MOCK_VEHICLES, MOCK_USERS } from '../constants';
 import { UserRole, CarType, Vehicle, Booking } from '../types';
 import { 
   Search, 
@@ -71,6 +71,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
   const [formError, setFormError] = useState('');
 
   // Form State
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+
+  // Form State
   const [formData, setFormData] = useState({
     make: '',
     model: '',
@@ -120,6 +123,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
   };
 
   const resetForm = () => {
+    setEditingVehicleId(null);
     setVinInput('');
     setVinDecodeResult(null);
     setManualEntry(false);
@@ -137,6 +141,24 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
       mileage: 0,
       trim: '',
     });
+  };
+
+  const handleEditClick = (vehicle: Vehicle) => {
+    setEditingVehicleId(vehicle.id);
+    setFormData({
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year,
+      type: vehicle.type as CarType,
+      vin: vehicle.vin || '',
+      licensePlate: vehicle.licensePlate || '',
+      color: vehicle.color || '', 
+      mileage: vehicle.mileage || 0,
+      trim: vehicle.trim || '',
+    });
+    setPreviewUrl(vehicle.image || null);
+    setManualEntry(true); // Edit mode implies manual entry form visibility
+    setShowAddVehicleModal(true);
   };
 
   // Render Form Fields helper
@@ -281,9 +303,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
           year: v.year,
           type: v.type, // Enum match expected
           vin: v.vin,
-          image: v.image_url || 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1000',
+          image: v.imageUrl || v.image_url || 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1000',
           mileage: v.mileage,
-          licensePlate: v.license_plate
+          licensePlate: v.licensePlate || v.license_plate,
+          color: v.color,
+          trim: v.trim
         }));
         
         setVehicles(mappedVehicles);
@@ -298,7 +322,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
     fetchData();
   }, []);
 
-  const handleAddVehicle = async () => {
+  const handleSaveVehicle = async () => {
     try {
       const formDataObj = new FormData();
       formDataObj.append('make', formData.make);
@@ -314,26 +338,42 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
         formDataObj.append('image', selectedFile);
       }
 
-      const { data } = await api.post('/vehicles', formDataObj, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      let savedVehicle;
+      if (editingVehicleId) {
+         const { data } = await api.put(`/vehicles/${editingVehicleId}`, formDataObj, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          savedVehicle = data;
+          
+          setVehicles(prev => prev.map(v => v.id === editingVehicleId ? {
+             id: data.id,
+             ...data,
+             image: data.imageUrl || data.image || v.image
+          } : v));
+          
+          showToast('Vehicle updated successfully!');
+      } else {
+          const { data } = await api.post('/vehicles', formDataObj, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          savedVehicle = data;
+          
+          setVehicles(prev => [...prev, {
+            id: data.id,
+            ...data,
+            image: data.imageUrl || data.image || `https://source.unsplash.com/random/800x600/?car,${data.make}`
+          }]);
+          
+          showToast('Vehicle added successfully!');
+      }
       
-      const addedVehicle = {
-        id: data.id,
-        ...data,
-        // Backend typically returns the full vehicle object, just ensure image is handled
-        image: data.imageUrl || data.image || `https://source.unsplash.com/random/800x600/?car,${data.make}`
-      };
-      
-      setVehicles([...vehicles, addedVehicle]);
       resetForm();
       setShowAddVehicleModal(false);
-      showToast('Vehicle added successfully!');
     } catch (error: any) {
-       console.error('Failed to add vehicle', error);
+       console.error('Failed to save vehicle', error);
        const msg = error.response?.data?.message ? 
           `${error.response.data.message} ${error.response.data.details ? JSON.stringify(error.response.data.details) : ''}` 
-          : 'Failed to add vehicle.';
+          : 'Failed to save vehicle.';
        setFormError(msg);
        showToast(msg);
     }
@@ -457,7 +497,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                       <p className="text-sm text-slate-300 mt-1">{vehicle.mileage.toLocaleString()} miles</p>
                     )}
                     <div className="flex gap-2 mt-3">
-                      <button onClick={() => setShowEditVehicleModal(true)} className="btn btn-xs btn-ghost gap-1"><Edit className="w-3 h-3" /> Edit</button>
+                      <button onClick={() => handleEditClick(vehicle)} className="btn btn-xs btn-ghost gap-1"><Edit className="w-3 h-3" /> Edit</button>
                       <button onClick={() => handleDeleteVehicle(vehicle.id)} className="btn btn-xs btn-ghost text-error gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
                     </div>
                   </div>
@@ -615,42 +655,48 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
           <div className="glass-card rounded-2xl p-6 border border-white/5">
             <h3 className="font-bold text-lg mb-4">Recent Bookings</h3>
             <div className="overflow-x-auto">
-              <table className="table w-full">
-                <thead>
-                  <tr>
-                    <th>Service</th>
-                    <th>Shop</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th>Total</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MOCK_BOOKINGS.map(booking => (
-                    <tr key={booking.id} className="hover:bg-slate-800/50">
-                      <td className="font-medium">{booking.serviceName}</td>
-                      <td className="text-slate-400">{booking.shopName}</td>
-                      <td className="text-slate-400">{booking.date}</td>
-                      <td>
-                        <span className={`badge badge-sm ${
-                          booking.status === 'Completed' ? 'badge-success' :
-                          booking.status === 'Confirmed' ? 'badge-primary' :
-                          booking.status === 'In Progress' ? 'badge-warning' : 'badge-ghost'
-                        }`}>
-                          {booking.status}
-                        </span>
-                      </td>
-                      <td className="font-medium">{booking.price}</td>
-                      <td>
-                        <button className="btn btn-ghost btn-xs">
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </td>
+              {bookings.length === 0 ? (
+                <div className="text-center py-10 text-slate-500">
+                  <Calendar className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p>No bookings yet.</p>
+                  <p className="text-xs">Your service bookings will appear here.</p>
+                </div>
+              ) : (
+                <table className="table w-full">
+                  <thead>
+                    <tr>
+                      <th>Service</th>
+                      <th>Shop</th>
+                      <th>Date</th>
+                      <th>Status</th>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {bookings.map((booking: any) => (
+                      <tr key={booking.id} className="hover:bg-slate-800/50">
+                        <td className="font-medium">{booking.service?.name || 'Service'}</td>
+                        <td className="text-slate-400">{booking.shop?.name || 'Shop'}</td>
+                        <td className="text-slate-400">{new Date(booking.scheduledDate).toLocaleDateString()}</td>
+                        <td>
+                          <span className={`badge badge-sm ${
+                            booking.status === 'COMPLETED' ? 'badge-success' :
+                            booking.status === 'CONFIRMED' ? 'badge-primary' :
+                            booking.status === 'IN_PROGRESS' ? 'badge-warning' : 'badge-ghost'
+                          }`}>
+                            {booking.status}
+                          </span>
+                        </td>
+                        <td>
+                          <button className="btn btn-ghost btn-xs">
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
@@ -770,12 +816,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
         </div>
       )}
 
-      {/* Add Vehicle Modal */}
+      {/* Add/Edit Vehicle Modal */}
       {showAddVehicleModal && (
         <div className="fixed top-16 right-0 left-0 bottom-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center">
           <div className="bg-slate-900 rounded-3xl max-w-lg w-full max-h-[calc(100vh-11rem)] overflow-y-auto border border-white/10 animate-in zoom-in-95 duration-300">
             <div className="sticky top-0 bg-slate-900 p-6 border-b border-white/5 flex items-center justify-between z-10 relative">
-              <h2 className="text-2xl font-black uppercase italic">Add Vehicle</h2>
+              <h2 className="text-2xl font-black uppercase italic">{editingVehicleId ? 'Edit Vehicle' : 'Add Vehicle'}</h2>
               <button onClick={() => setShowAddVehicleModal(false)} className="btn btn-ghost btn-circle btn-sm">
                 <X className="w-5 h-5" />
               </button>
@@ -784,7 +830,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
             <div className="p-6 space-y-6">
               {formError && <div className="alert alert-error text-sm">{formError}</div>}
               
-              {!manualEntry ? (
+              {!manualEntry && !editingVehicleId ? (
                 <div>
                   <label className="label">
                     <span className="label-text font-medium flex items-center gap-2">
@@ -830,44 +876,21 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                 </div>
               ) : null}
 
-              {(manualEntry || (vinDecodeResult?.valid && vinDecodeResult.make)) && (
+              {(manualEntry || editingVehicleId || (vinDecodeResult?.valid && vinDecodeResult.make)) && (
                   <div className="space-y-4">
-                      {manualEntry && <button onClick={() => setManualEntry(false)} className="btn btn-ghost btn-sm">← Back to VIN Decode</button>}
+                      {manualEntry && !editingVehicleId && <button onClick={() => setManualEntry(false)} className="btn btn-ghost btn-sm">← Back to VIN Decode</button>}
                       
                       {renderFormFields()}
 
                       <button 
-                        onClick={handleAddVehicle}
+                        onClick={handleSaveVehicle}
                         disabled={!formData.make || !formData.model}
                         className="btn btn-primary btn-block rounded-xl uppercase font-bold"
                       >
-                        Save Vehicle
+                        {editingVehicleId ? 'Update Vehicle' : 'Save Vehicle'}
                       </button>
                   </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Vehicle Modal */}
-      {showEditVehicleModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
-            <h2 className="text-2xl font-bold mb-4">Edit Vehicle</h2>
-            <div className="space-y-4">
-              <div className="form-control">
-                <label className="label"><span className="label-text">Nickname</span></label>
-                <input type="text" placeholder="My Daily Driver" className="input input-bordered bg-slate-800 border-white/10" />
-              </div>
-              <div className="form-control">
-                <label className="label"><span className="label-text">Current Mileage</span></label>
-                <input type="number" placeholder="45000" className="input input-bordered bg-slate-800 border-white/10" />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowEditVehicleModal(false)} className="btn btn-ghost flex-1">Cancel</button>
-              <button onClick={() => { showToast('Vehicle updated successfully!'); setShowEditVehicleModal(false); }} className="btn btn-primary flex-1">Save Changes</button>
             </div>
           </div>
         </div>

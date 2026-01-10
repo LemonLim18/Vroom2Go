@@ -81,7 +81,7 @@ export const getDriverRequests = async (req: any, res: Response) => {
 };
 
 /**
- * @desc    Get requests available for a shop
+ * @desc    Get requests available for a shop (OPEN, not yet quoted by this shop)
  * @route   GET /api/quotes/requests/shop
  * @access  Private (Shop)
  */
@@ -96,13 +96,6 @@ export const getShopRequests = async (req: any, res: Response) => {
       return res.status(400).json({ message: 'Shop profile not found' });
     }
 
-    // Find requests that are:
-    // 1. OPEN
-    // 2. AND (Broadcast = true OR includes this shop ID in targetShopIds)
-    // Note: JSON filtering in Prisma with array contains is tricky depending on DB.
-    // For MVP/MySQL: We might fetch OPEN requests and filter in memory if JSON search is limited,
-    // or use specific raw query. For now, we'll fetch OPEN requests and filter.
-    
     // Fetch recent open requests
     const openRequests = await prisma.quoteRequest.findMany({
       where: { 
@@ -110,34 +103,96 @@ export const getShopRequests = async (req: any, res: Response) => {
       },
       include: {
         vehicle: true,
-        user: { select: { name: true } }
+        user: { select: { name: true } },
+        quotes: { select: { shopId: true } } // Include quotes to check if this shop has responded
       },
       orderBy: { id: 'desc' },
-      take: 50 // Limit for safety
+      take: 50
     });
 
-    console.log(`[DEBUG] getShopRequests: Shop ${shop.id} checking ${openRequests.length} OPEN requests.`);
-    openRequests.forEach((r: any) => console.log(`- Request ${r.id}: Broadcast=${r.broadcast}, Targets=${JSON.stringify(r.targetShopIds)}`));
-
-    // Filter logic
+    // Filter: broadcast or targeted to this shop, AND not already quoted by this shop
     const visibleRequests = openRequests.filter((req: any) => {
-        // If broadcast is true, it's visible (can add radius logic here later)
+        // Check if this shop has already quoted this request
+        const alreadyQuoted = req.quotes.some((q: any) => q.shopId === shop.id);
+        if (alreadyQuoted) return false;
+        
+        // If broadcast is true, it's visible
         if (req.broadcast) return true;
         
         // Check if shop ID is in target list
         if (Array.isArray(req.targetShopIds)) {
-            // @ts-ignore
             return req.targetShopIds.includes(shop.id) || req.targetShopIds.includes(String(shop.id));
         }
         return false;
     });
 
-    res.json(visibleRequests);
+    // Remove quotes from response to keep it clean
+    const cleanedRequests = visibleRequests.map((r: any) => {
+        const { quotes, ...rest } = r;
+        return rest;
+    });
+
+    res.json(cleanedRequests);
   } catch (error: any) {
     console.error('Get shop requests error:', error);
     res.status(500).json({ message: error.message });
   }
 };
+
+/**
+ * @desc    Get requests this shop has already responded to
+ * @route   GET /api/quotes/requests/shop/responded
+ * @access  Private (Shop)
+ */
+export const getShopRespondedRequests = async (req: any, res: Response) => {
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { userId: req.user.id }
+    });
+
+    if (!shop) {
+      return res.status(400).json({ message: 'Shop profile not found' });
+    }
+
+    // Find quotes submitted by this shop, then get the associated requests
+    const myQuotes = await prisma.quote.findMany({
+      where: { 
+        shopId: shop.id,
+        quoteRequestId: { not: null }
+      },
+      include: {
+        quoteRequest: {
+          include: {
+            vehicle: true,
+            user: { select: { name: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Extract unique requests and attach FULL quote info
+    const respondedRequests = myQuotes.map((q: any) => ({
+      ...q.quoteRequest,
+      quote: {
+        id: q.id,
+        description: q.description,
+        partsEstimate: q.partsEstimate,
+        laborEstimate: q.laborEstimate,
+        totalEstimate: q.totalEstimate,
+        validUntil: q.validUntil,
+        status: q.status,
+        createdAt: q.createdAt
+      }
+    })).filter((r: any) => r.id); // Filter out any nulls
+
+    res.json(respondedRequests);
+  } catch (error: any) {
+    console.error('Get shop responded requests error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
 
 /**
  * @desc    Submit a quote (respond to request)
@@ -190,6 +245,50 @@ export const createQuote = async (req: any, res: Response) => {
     res.status(201).json(quote);
   } catch (error: any) {
     console.error('Create quote error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Accept a quote (user accepts shop's quote)
+ * @route   PUT /api/quotes/:id/accept
+ * @access  Private (Driver/User)
+ */
+export const acceptQuote = async (req: any, res: Response) => {
+  try {
+    const quoteId = parseInt(req.params.id);
+
+    const quote = await prisma.quote.findUnique({
+      where: { id: quoteId },
+      include: {
+        shop: { select: { id: true, name: true, address: true, imageUrl: true } },
+        vehicle: { select: { id: true, make: true, model: true, year: true } },
+        quoteRequest: true
+      }
+    });
+
+    if (!quote) {
+      return res.status(404).json({ message: 'Quote not found' });
+    }
+
+    // Verify ownership - quote belongs to this user
+    if (quote.userId !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized to accept this quote' });
+    }
+
+    // Update quote status to ACCEPTED
+    const updatedQuote = await prisma.quote.update({
+      where: { id: quoteId },
+      data: { status: 'ACCEPTED' },
+      include: {
+        shop: { select: { id: true, name: true, address: true, imageUrl: true } },
+        vehicle: { select: { id: true, make: true, model: true, year: true } }
+      }
+    });
+
+    res.json(updatedQuote);
+  } catch (error: any) {
+    console.error('Accept quote error:', error);
     res.status(500).json({ message: error.message });
   }
 };

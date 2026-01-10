@@ -4,7 +4,9 @@ import {
     createQuoteRequest, 
     getDriverRequests, 
     getShopRequests, 
-    createQuote 
+    getShopRespondedRequests,
+    createQuote,
+    acceptQuote
 } from '../controllers/quote.controller';
 
 const router = express.Router();
@@ -12,6 +14,8 @@ const router = express.Router();
 router.post('/requests', protect, createQuoteRequest);
 router.get('/requests/driver', protect, getDriverRequests);
 router.get('/requests/shop', protect, getShopRequests);
+router.get('/requests/shop/responded', protect, getShopRespondedRequests);
 router.post('/requests/:id/respond', protect, createQuote);
+router.put('/:id/accept', protect, acceptQuote);
 
 export default router;

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Shop, Service, ServiceCategory } from '../types';
 import { MOCK_SERVICES } from '../constants';
+import api from '../services/api';
 import { 
   ShieldCheck, 
   Star, 
@@ -35,6 +36,8 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
 
 export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, onMessage }) => {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
 
   const getServiceDetails = (id: string) => MOCK_SERVICES.find(s => s.id === id);
 
@@ -93,6 +96,23 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
         window.scrollTo(0, 0);
     }
   }, []);
+
+  // Fetch reviews for this shop
+  useEffect(() => {
+    const fetchReviews = async () => {
+      if (!shop.id) return;
+      setReviewsLoading(true);
+      try {
+        const { data } = await api.get(`/reviews/shop/${shop.id}`);
+        setReviews(data.reviews || []);
+      } catch (error) {
+        console.error('Failed to fetch reviews:', error);
+      } finally {
+        setReviewsLoading(false);
+      }
+    };
+    fetchReviews();
+  }, [shop.id]);
 
   // Create Google Maps embed URL from address
   const getMapEmbedUrl = (address: string) => {
@@ -266,7 +286,7 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black italic uppercase tracking-tighter flex items-center gap-2">
                 <ChevronRight className="w-6 h-6 text-primary" /> Customer Reviews
-                <span className="badge badge-primary badge-sm ml-2">{shop.reviews.length}</span>
+                <span className="badge badge-primary badge-sm ml-2">{reviews.length}</span>
               </h2>
               <select className="select select-sm bg-slate-800 border-white/10">
                 <option>Most Recent</option>
@@ -276,22 +296,34 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
             </div>
 
             <div className="space-y-4">
-              {shop.reviews && shop.reviews.length > 0 ? (
-                shop.reviews.map((review: any) => {
-                  // Handle backend vs frontend structure
+              {reviewsLoading ? (
+                <div className="text-center py-10">
+                  <span className="loading loading-spinner loading-lg text-primary"></span>
+                </div>
+              ) : reviews.length > 0 ? (
+                reviews.map((review: any) => {
                   const authorName = review.user?.name || review.author || 'Anonymous';
+                  const authorAvatar = review.user?.avatarUrl;
                   const dateDisplay = review.createdAt 
                     ? new Date(review.createdAt).toLocaleDateString() 
                     : review.date || 'Recently';
+                  const reviewImages = Array.isArray(review.images) ? review.images : [];
+                  const serviceName = review.booking?.service?.name;
 
                   return (
                     <div key={review.id} className="glass-card rounded-2xl p-6 border border-white/5 hover:border-white/10 transition-all">
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex items-center gap-3">
                           <div className="avatar placeholder">
-                            <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-12 font-black">
-                              <span>{authorName.charAt(0)}</span>
-                            </div>
+                            {authorAvatar ? (
+                              <div className="w-12 rounded-xl overflow-hidden">
+                                <img src={authorAvatar.startsWith('http') ? authorAvatar : `http://localhost:5000${authorAvatar}`} alt={authorName} />
+                              </div>
+                            ) : (
+                              <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-12 font-black">
+                                <span>{authorName.charAt(0)}</span>
+                              </div>
+                            )}
                           </div>
                           <div>
                             <div className="font-bold">{authorName}</div>
@@ -304,10 +336,36 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
                           ))}
                         </div>
                       </div>
-                      <p className="text-slate-300">"{review.comment}"</p>
-                      {review.serviceName && (
-                        <div className="mt-4 inline-flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full text-xs font-bold text-slate-400 border border-white/5">
-                          <CheckCircle className="w-3 h-3 text-green-400" /> Verified: {review.serviceName}
+                      
+                      {review.comment && (
+                        <p className="text-slate-300 mb-4">"{review.comment}"</p>
+                      )}
+                      
+                      {/* Review Images */}
+                      {reviewImages.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {reviewImages.map((img: string, idx: number) => (
+                            <img 
+                              key={idx}
+                              src={img.startsWith('http') ? img : `http://localhost:5000${img}`}
+                              alt={`Review photo ${idx + 1}`}
+                              className="w-24 h-24 object-cover rounded-lg border border-white/10 cursor-pointer hover:border-primary transition-colors"
+                            />
+                          ))}
+                        </div>
+                      )}
+                      
+                      {serviceName && (
+                        <div className="inline-flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full text-xs font-bold text-slate-400 border border-white/5">
+                          <CheckCircle className="w-3 h-3 text-green-400" /> Verified: {serviceName}
+                        </div>
+                      )}
+                      
+                      {/* Shop Response */}
+                      {review.shopResponse && (
+                        <div className="mt-4 ml-6 pl-4 border-l-2 border-primary/50">
+                          <p className="text-xs text-primary font-bold mb-1">Shop Response</p>
+                          <p className="text-sm text-slate-400">{review.shopResponse}</p>
                         </div>
                       )}
                     </div>

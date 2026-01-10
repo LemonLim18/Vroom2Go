@@ -555,6 +555,7 @@ model Review {
   bookingId       Int?      @map("booking_id")
   rating          Int
   comment         String?   @db.Text
+  images          Json?     @default("[]")
   shopResponse    String?   @map("shop_response") @db.Text
   shopRespondedAt DateTime? @map("shop_responded_at")
   isVerified      Boolean   @default(false) @map("is_verified")

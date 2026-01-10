@@ -24,6 +24,7 @@ import { AdminConsole } from './views/AdminConsole';
 import { ShopProfileSettings } from './views/ShopProfileSettings';
 import ResetPasswordView from './views/ResetPasswordView';
 import { UserQuotesView } from './views/UserQuotesView';
+import { MyBookingsView } from './views/MyBookingsView';
 import { MOCK_SERVICES, MOCK_BOOKINGS, MOCK_QUOTES } from './constants';
 
 // Placeholder view for Service Details
@@ -414,49 +415,7 @@ const App: React.FC = () => {
         );
       
       case 'bookings':
-        return (
-          <div className="space-y-6">
-            <h1 className="text-3xl font-black uppercase italic tracking-tighter">
-              My <span className="text-primary">Bookings</span>
-            </h1>
-            {MOCK_BOOKINGS.length === 0 ? (
-              <div className="card bg-base-100 shadow p-6">
-                <p className="opacity-70">You have no bookings yet.</p>
-                <button className="btn btn-primary btn-sm mt-4" onClick={() => handleNavigate('home')}>
-                  Find Shops
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {MOCK_BOOKINGS.map(booking => (
-                  <div 
-                    key={booking.id}
-                    onClick={() => setSelectedBooking(booking)}
-                    className="glass-card rounded-2xl p-5 border border-white/5 cursor-pointer hover:border-primary/30 transition-all"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-bold text-lg">{booking.serviceName}</h3>
-                        <p className="text-slate-400">{booking.shopName}</p>
-                        <p className="text-sm text-slate-500 mt-1">{booking.date}</p>
-                      </div>
-                      <div className="text-right">
-                        <span className={`badge ${
-                          booking.status === 'Completed' ? 'badge-success' :
-                          booking.status === 'Confirmed' ? 'badge-primary' :
-                          booking.status === 'In Progress' ? 'badge-warning' : 'badge-ghost'
-                        }`}>
-                          {booking.status}
-                        </span>
-                        <p className="text-lg font-bold mt-2">{booking.price}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
+        return <MyBookingsView onNavigate={handleNavigate} />;
       
       case 'invoice':
         return (
