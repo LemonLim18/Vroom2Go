@@ -18,9 +18,11 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
 
       // Add user to request (in robust app, fetch user from DB here to ensure exists)
       req.user = decoded;
+      console.log(`[AUTH] User authenticated: ID=${req.user.id} Role=${req.user.role}`);
 
       next();
     } catch (error) {
+      console.error('[AUTH] Token verification failed:', error);
       res.status(401).json({ message: 'Not authorized, token failed' });
     }
   }

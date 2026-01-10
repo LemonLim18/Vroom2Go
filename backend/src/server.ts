@@ -20,12 +20,17 @@ export const io = initSocket(server);
 
 // Connect to database and start server
 
+import { ensureDefaultUser } from './utils/bootstrap';
+
 // Connect to database and start server
 async function startServer() {
   try {
     // Check DB connection
     await prisma.$connect();
     console.log('✅ Connected to MySQL database');
+
+    // Run bootstrap tasks
+    await ensureDefaultUser();
 
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);

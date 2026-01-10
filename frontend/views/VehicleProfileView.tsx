@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Vehicle, CarType } from '../types';
-import { MOCK_VEHICLES } from '../constants';
+import api from '../services/api';
 import { decodeVIN, formatVINMasked, getVehicleCategoryDescription } from '../services/vinService';
 import { 
   Car, 
@@ -16,7 +16,8 @@ import {
   Hash,
   Palette,
   FileText,
-  X
+  X,
+  Save
 } from 'lucide-react';
 
 interface VehicleProfileViewProps {
@@ -25,16 +26,26 @@ interface VehicleProfileViewProps {
 }
 
 export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, onVehicleSelect }) => {
-  const [vehicles, setVehicles] = useState<Vehicle[]>(MOCK_VEHICLES);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loading, setLoading] = useState(true);
   
-  // Add vehicle form state
+  // Modals
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  
+  // Selection
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  
+  // Add/Edit Utility State
   const [vinInput, setVinInput] = useState('');
   const [vinDecodeResult, setVinDecodeResult] = useState<ReturnType<typeof decodeVIN> | null>(null);
   const [isDecoding, setIsDecoding] = useState(false);
   const [manualEntry, setManualEntry] = useState(false);
-  const [newVehicle, setNewVehicle] = useState({
+  const [formError, setFormError] = useState('');
+
+  // Form State
+  const [formData, setFormData] = useState({
     make: '',
     model: '',
     year: new Date().getFullYear(),
@@ -46,17 +57,53 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
     trim: '',
   });
 
+  // File state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  // Fetch Vehicles
+  useEffect(() => {
+    fetchVehicles();
+  }, []);
+
+  const fetchVehicles = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get('/vehicles');
+      // Normalize data (ensure IDs are strings if needed)
+      const mapped = data.map((v: any) => ({
+        ...v,
+        id: String(v.id),
+        mileage: Number(v.mileage || 0),
+        image: v.imageUrl || v.image || `https://source.unsplash.com/random/800x600/?car,${v.make}` 
+      }));
+      setVehicles(mapped);
+    } catch (err) {
+      console.error('Failed to fetch vehicles', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleVINDecode = () => {
     if (vinInput.length < 17) return;
     
     setIsDecoding(true);
-    // Simulate API delay
+    // Simulate API delay - ideally replace with backend endpoint if available
     setTimeout(() => {
       const result = decodeVIN(vinInput);
       setVinDecodeResult(result);
       
       if (result.valid && result.make) {
-        setNewVehicle(prev => ({
+        setFormData(prev => ({
           ...prev,
           make: result.make || '',
           model: result.model || '',
@@ -70,32 +117,108 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
     }, 800);
   };
 
-  const handleAddVehicle = () => {
-    const vehicle: Vehicle = {
-      id: `v${Date.now()}`,
-      userId: 'user1',
-      make: newVehicle.make,
-      model: newVehicle.model,
-      year: newVehicle.year,
-      type: newVehicle.type,
-      vin: newVehicle.vin || `VIN${Date.now()}`,
-      licensePlate: newVehicle.licensePlate,
-      color: newVehicle.color,
-      mileage: newVehicle.mileage,
-      trim: newVehicle.trim,
-      image: `https://picsum.photos/300/200?random=${Date.now()}`,
-    };
-    
-    setVehicles(prev => [...prev, vehicle]);
-    resetAddForm();
+  const handleAddVehicle = async () => {
+    try {
+      const formDataObj = new FormData();
+      formDataObj.append('make', formData.make);
+      formDataObj.append('model', formData.model);
+      formDataObj.append('year', String(formData.year)); // Ensure string for FormData
+      formDataObj.append('type', formData.type);
+      formDataObj.append('vin', formData.vin);
+      formDataObj.append('licensePlate', formData.licensePlate);
+      formDataObj.append('color', formData.color);
+      formDataObj.append('trim', formData.trim);
+      if (formData.mileage) formDataObj.append('mileage', String(formData.mileage));
+      if (selectedFile) {
+        formDataObj.append('image', selectedFile);
+      }
+
+      await api.post('/vehicles', formDataObj, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      
+      // Refresh list to get new vehicle with server-generated image URL
+      fetchVehicles();
+      
+      resetForm();
+      setShowAddModal(false);
+    } catch (err: any) {
+      console.error('Add vehicle failed', err);
+      // Show backend error message if available
+      // Show backend error message if available
+      const msg = err.response?.data?.message ? 
+          `${err.response.data.message} ${err.response.data.details ? JSON.stringify(err.response.data.details) : ''}` 
+          : 'Failed to add vehicle. Please try again.';
+      setFormError(msg);
+    }
   };
 
-  const resetAddForm = () => {
-    setShowAddModal(false);
+  const handleUpdateVehicle = async () => {
+    if (!editingVehicle) return;
+    try {
+        const formDataObj = new FormData();
+        formDataObj.append('make', formData.make);
+        formDataObj.append('model', formData.model);
+        formDataObj.append('year', String(formData.year));
+        formDataObj.append('type', formData.type);
+        formDataObj.append('licensePlate', formData.licensePlate);
+        formDataObj.append('color', formData.color);
+        formDataObj.append('trim', formData.trim);
+        if (formData.mileage) formDataObj.append('mileage', String(formData.mileage));
+        if (selectedFile) {
+            formDataObj.append('image', selectedFile);
+        }
+
+        await api.put(`/vehicles/${editingVehicle.id}`, formDataObj, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        
+        fetchVehicles(); // Refresh to ensure image update is reflected
+        
+        setShowEditModal(false);
+        setEditingVehicle(null);
+    } catch (err: any) {
+        console.error('Update failed', err);
+        const msg = err.response?.data?.message || 'Failed to update vehicle.';
+        setFormError(msg);
+    }
+  };
+
+  const handleDeleteVehicle = async (id: string) => {
+    if (!window.confirm('Are you sure you want to remove this vehicle?')) return;
+    try {
+      await api.delete(`/vehicles/${id}`);
+      setVehicles(prev => prev.filter(v => v.id !== id));
+      if (selectedVehicle?.id === id) setSelectedVehicle(null);
+    } catch (err) {
+      console.error('Delete failed', err);
+    }
+  };
+
+  const openEditModal = (vehicle: Vehicle) => {
+    setEditingVehicle(vehicle);
+    setFormData({
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year,
+        type: vehicle.type,
+        vin: vehicle.vin,
+        licensePlate: vehicle.licensePlate || '',
+        color: vehicle.color || '',
+        mileage: vehicle.mileage || 0,
+        trim: vehicle.trim || ''
+    });
+    setShowEditModal(true);
+  };
+
+  const resetForm = () => {
     setVinInput('');
     setVinDecodeResult(null);
     setManualEntry(false);
-    setNewVehicle({
+    setFormError('');
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setFormData({
       make: '',
       model: '',
       year: new Date().getFullYear(),
@@ -108,13 +231,6 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
     });
   };
 
-  const handleDeleteVehicle = (id: string) => {
-    setVehicles(prev => prev.filter(v => v.id !== id));
-    if (selectedVehicle?.id === id) {
-      setSelectedVehicle(null);
-    }
-  };
-
   const getTypeColor = (type: CarType) => {
     switch (type) {
       case CarType.COMPACT: return 'badge-info';
@@ -125,6 +241,125 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
       default: return 'badge-ghost';
     }
   };
+
+  // Render Form Fields helper
+  const renderFormFields = () => (
+    <>
+         {/* Image Upload */}
+         <div className="form-control w-full">
+            <label className="label"><span className="label-text">Vehicle Image</span></label>
+            <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-xl bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center relative">
+                    {previewUrl || (editingVehicle?.image && !selectedFile) ? (
+                        <img src={previewUrl || editingVehicle?.image} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                        <Car className="w-8 h-8 text-slate-600" />
+                    )}
+                </div>
+                <input 
+                    type="file" 
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="file-input file-input-bordered file-input-sm w-full max-w-xs bg-slate-800" 
+                />
+            </div>
+         </div>
+
+         <div className="grid grid-cols-2 gap-4">
+            <div className="form-control">
+                <label className="label"><span className="label-text">Make *</span></label>
+                <input 
+                type="text"
+                value={formData.make}
+                onChange={(e) => setFormData(prev => ({ ...prev, make: e.target.value }))}
+                placeholder="Honda"
+                className="input input-bordered bg-base-100 border-white/10"
+                />
+            </div>
+            <div className="form-control">
+                <label className="label"><span className="label-text">Model *</span></label>
+                <input 
+                type="text"
+                value={formData.model}
+                onChange={(e) => setFormData(prev => ({ ...prev, model: e.target.value }))}
+                placeholder="Civic"
+                className="input input-bordered bg-base-100 border-white/10"
+                />
+            </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+        <div className="form-control">
+            <label className="label"><span className="label-text">Year *</span></label>
+            <input 
+            type="number"
+            value={formData.year}
+            onChange={(e) => setFormData(prev => ({ ...prev, year: parseInt(e.target.value) }))}
+            min={1900}
+            max={new Date().getFullYear() + 1}
+            className="input input-bordered bg-base-100 border-white/10"
+            />
+        </div>
+        <div className="form-control">
+            <label className="label"><span className="label-text">Type *</span></label>
+            <select 
+            value={formData.type}
+            onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as CarType }))}
+            className="select select-bordered bg-base-100 border-white/10"
+            >
+            {Object.values(CarType).map(type => (
+                <option key={type} value={type}>{type}</option>
+            ))}
+            </select>
+        </div>
+        </div>
+
+        <div className="form-control">
+        <label className="label"><span className="label-text">Trim</span></label>
+        <input 
+            type="text"
+            value={formData.trim}
+            onChange={(e) => setFormData(prev => ({ ...prev, trim: e.target.value }))}
+            placeholder="EX, Sport, Limited, etc."
+            className="input input-bordered bg-base-100 border-white/10"
+        />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+        <div className="form-control">
+            <label className="label"><span className="label-text">License Plate</span></label>
+            <input 
+            type="text"
+            value={formData.licensePlate}
+            onChange={(e) => setFormData(prev => ({ ...prev, licensePlate: e.target.value.toUpperCase() }))}
+            placeholder="ABC-1234"
+            className="input input-bordered bg-base-100 border-white/10 uppercase"
+            />
+        </div>
+        <div className="form-control">
+            <label className="label"><span className="label-text">Color</span></label>
+            <input 
+            type="text"
+            value={formData.color}
+            onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
+            placeholder="Silver"
+            className="input input-bordered bg-base-100 border-white/10"
+            />
+        </div>
+        </div>
+
+        <div className="form-control">
+        <label className="label"><span className="label-text">Current Mileage</span></label>
+        <input 
+            type="number"
+            value={formData.mileage || ''}
+            onChange={(e) => setFormData(prev => ({ ...prev, mileage: parseInt(e.target.value) || 0 }))}
+            placeholder="45000"
+            className="input input-bordered bg-base-100 border-white/10"
+        />
+        </div>
+    </>
+  );
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -141,21 +376,22 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
         </div>
         
         <button 
-          onClick={() => setShowAddModal(true)}
+          onClick={() => { resetForm(); setShowAddModal(true); }}
           className="btn btn-primary gap-2 rounded-xl"
         >
           <Plus className="w-5 h-5" /> Add Vehicle
         </button>
       </div>
 
-      {/* Vehicle Grid */}
-      {vehicles.length === 0 ? (
+      {loading ? (
+          <div className="flex justify-center p-12"><span className="loading loading-spinner loading-lg"></span></div>
+      ) : vehicles.length === 0 ? (
         <div className="glass-card rounded-3xl p-12 text-center border border-white/5">
           <Car className="w-16 h-16 text-slate-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold mb-2">No Vehicles Yet</h3>
           <p className="text-slate-400 mb-6">Add your first vehicle to get started with personalized service quotes.</p>
           <button 
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { resetForm(); setShowAddModal(true); }}
             className="btn btn-primary gap-2"
           >
             <Plus className="w-5 h-5" /> Add Your First Vehicle
@@ -171,10 +407,11 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
                   ? 'border-primary shadow-[0_0_20px_rgba(250,204,21,0.2)]' 
                   : 'border-white/5 hover:border-white/10'
               }`}
-              onClick={() => setSelectedVehicle(vehicle)}
             >
-              {/* Vehicle Image */}
-              <div className="h-40 relative overflow-hidden bg-slate-800">
+              <div 
+                className="h-40 relative overflow-hidden bg-slate-800"
+                onClick={() => setSelectedVehicle(vehicle)}
+              >
                 <img 
                   src={vehicle.image} 
                   alt={`${vehicle.make} ${vehicle.model}`}
@@ -186,7 +423,6 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
                 </div>
               </div>
 
-              {/* Vehicle Info */}
               <div className="p-5">
                 <h3 className="text-xl font-black uppercase italic mb-1">
                   {vehicle.year} {vehicle.make}
@@ -205,11 +441,11 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
                     </div>
                   )}
                   {vehicle.mileage && (
-                    <div className="flex items-center gap-2 text-slate-400">
+                      <div className="flex items-center gap-2 text-slate-400">
                       <Gauge className="w-4 h-4" />
                       <span>{vehicle.mileage.toLocaleString()} mi</span>
-                    </div>
-                  )}
+                      </div>
+                  ) as any}
                   {vehicle.color && (
                     <div className="flex items-center gap-2 text-slate-400">
                       <Palette className="w-4 h-4" />
@@ -223,7 +459,7 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
                     className="btn btn-sm btn-ghost flex-1 gap-1"
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Edit functionality
+                      openEditModal(vehicle);
                     }}
                   >
                     <Edit3 className="w-4 h-4" /> Edit
@@ -242,6 +478,7 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
                       className="btn btn-sm btn-primary gap-1"
                       onClick={(e) => {
                         e.stopPropagation();
+                        // Call the prop function
                         onVehicleSelect(vehicle);
                       }}
                     >
@@ -255,33 +492,21 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
         </div>
       )}
 
-      {/* Selected Vehicle Details */}
-      {selectedVehicle && (
-        <div className="mt-8 glass-card rounded-3xl p-6 border border-white/5">
-          <h3 className="text-xl font-bold mb-4">Service History</h3>
-          <div className="text-center py-8 text-slate-400">
-            <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>No service history for this vehicle yet.</p>
-            <button onClick={() => onVehicleSelect?.(selectedVehicle)} className="btn btn-primary btn-sm mt-4">Book First Service</button>
-          </div>
-        </div>
-      )}
-
       {/* Add Vehicle Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-white/10 animate-in zoom-in-95 duration-300">
-            {/* Modal Header */}
             <div className="sticky top-0 bg-slate-900 p-6 border-b border-white/5 flex items-center justify-between">
               <h2 className="text-2xl font-black uppercase italic">Add Vehicle</h2>
-              <button onClick={resetAddForm} className="btn btn-ghost btn-circle btn-sm">
+              <button onClick={() => setShowAddModal(false)} className="btn btn-ghost btn-circle btn-sm">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6 space-y-6">
-              {/* VIN Decode Section */}
-              {!manualEntry && (
+              {formError && <div className="alert alert-error text-sm">{formError}</div>}
+              
+              {!manualEntry ? (
                 <div>
                   <label className="label">
                     <span className="label-text font-medium flex items-center gap-2">
@@ -305,163 +530,66 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
                       {isDecoding ? <span className="loading loading-spinner loading-sm" /> : 'Decode'}
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">{vinInput.length}/17 characters</p>
-
-                  {/* VIN Decode Result */}
+                  
                   {vinDecodeResult && (
                     <div className={`alert mt-4 ${vinDecodeResult.valid && vinDecodeResult.make ? 'alert-success' : 'alert-warning'}`}>
-                      {vinDecodeResult.valid && vinDecodeResult.make ? (
-                        <>
-                          <CheckCircle className="w-5 h-5" />
-                          <div>
-                            <p className="font-bold">{vinDecodeResult.year} {vinDecodeResult.make} {vinDecodeResult.model}</p>
-                            <p className="text-sm opacity-80">{vinDecodeResult.trim} • {vinDecodeResult.type} • Made in {vinDecodeResult.country}</p>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <AlertCircle className="w-5 h-5" />
-                          <span>{vinDecodeResult.error || 'Could not decode VIN'}</span>
-                        </>
-                      )}
+                       {vinDecodeResult.valid && vinDecodeResult.make ? (
+                         <>
+                            <CheckCircle className="w-5 h-5" />
+                            <div>
+                                <p className="font-bold">{vinDecodeResult.year} {vinDecodeResult.make} {vinDecodeResult.model}</p>
+                                <p className="text-sm opacity-80">{vinDecodeResult.trim} • {vinDecodeResult.type}</p>
+                            </div>
+                         </>
+                       ) : (
+                          <span>Could not decode VIN</span>
+                       )}
                     </div>
                   )}
 
                   <div className="divider text-sm text-slate-500">OR</div>
-                  
-                  <button 
-                    onClick={() => setManualEntry(true)}
-                    className="btn btn-outline btn-block"
-                  >
-                    Enter Details Manually
-                  </button>
+                  <button onClick={() => setManualEntry(true)} className="btn btn-outline btn-block">Enter Details Manually</button>
                 </div>
-              )}
+              ) : null}
 
-              {/* Manual Entry Form */}
               {(manualEntry || (vinDecodeResult?.valid && vinDecodeResult.make)) && (
-                <div className="space-y-4">
-                  {manualEntry && (
-                    <button 
-                      onClick={() => setManualEntry(false)}
-                      className="btn btn-ghost btn-sm"
-                    >
-                      ← Back to VIN Decode
-                    </button>
-                  )}
+                  <div className="space-y-4">
+                      {manualEntry && <button onClick={() => setManualEntry(false)} className="btn btn-ghost btn-sm">← Back to VIN Decode</button>}
+                      
+                      {renderFormFields()}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="form-control">
-                      <label className="label"><span className="label-text">Make *</span></label>
-                      <input 
-                        type="text"
-                        value={newVehicle.make}
-                        onChange={(e) => setNewVehicle(prev => ({ ...prev, make: e.target.value }))}
-                        placeholder="Honda"
-                        className="input input-bordered bg-base-100 border-white/10"
-                      />
-                    </div>
-                    <div className="form-control">
-                      <label className="label"><span className="label-text">Model *</span></label>
-                      <input 
-                        type="text"
-                        value={newVehicle.model}
-                        onChange={(e) => setNewVehicle(prev => ({ ...prev, model: e.target.value }))}
-                        placeholder="Civic"
-                        className="input input-bordered bg-base-100 border-white/10"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="form-control">
-                      <label className="label"><span className="label-text">Year *</span></label>
-                      <input 
-                        type="number"
-                        value={newVehicle.year}
-                        onChange={(e) => setNewVehicle(prev => ({ ...prev, year: parseInt(e.target.value) }))}
-                        min={1900}
-                        max={new Date().getFullYear() + 1}
-                        className="input input-bordered bg-base-100 border-white/10"
-                      />
-                    </div>
-                    <div className="form-control">
-                      <label className="label"><span className="label-text">Type *</span></label>
-                      <select 
-                        value={newVehicle.type}
-                        onChange={(e) => setNewVehicle(prev => ({ ...prev, type: e.target.value as CarType }))}
-                        className="select select-bordered bg-base-100 border-white/10"
+                      <button 
+                        onClick={handleAddVehicle}
+                        disabled={!formData.make || !formData.model}
+                        className="btn btn-primary btn-block rounded-xl uppercase font-bold"
                       >
-                        {Object.values(CarType).map(type => (
-                          <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
-                    </div>
+                        Save Vehicle
+                      </button>
                   </div>
-
-                  <div className="form-control">
-                    <label className="label"><span className="label-text">Trim</span></label>
-                    <input 
-                      type="text"
-                      value={newVehicle.trim}
-                      onChange={(e) => setNewVehicle(prev => ({ ...prev, trim: e.target.value }))}
-                      placeholder="EX, Sport, Limited, etc."
-                      className="input input-bordered bg-base-100 border-white/10"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="form-control">
-                      <label className="label"><span className="label-text">License Plate</span></label>
-                      <input 
-                        type="text"
-                        value={newVehicle.licensePlate}
-                        onChange={(e) => setNewVehicle(prev => ({ ...prev, licensePlate: e.target.value.toUpperCase() }))}
-                        placeholder="ABC-1234"
-                        className="input input-bordered bg-base-100 border-white/10 uppercase"
-                      />
-                    </div>
-                    <div className="form-control">
-                      <label className="label"><span className="label-text">Color</span></label>
-                      <input 
-                        type="text"
-                        value={newVehicle.color}
-                        onChange={(e) => setNewVehicle(prev => ({ ...prev, color: e.target.value }))}
-                        placeholder="Silver"
-                        className="input input-bordered bg-base-100 border-white/10"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-control">
-                    <label className="label"><span className="label-text">Current Mileage</span></label>
-                    <input 
-                      type="number"
-                      value={newVehicle.mileage || ''}
-                      onChange={(e) => setNewVehicle(prev => ({ ...prev, mileage: parseInt(e.target.value) || 0 }))}
-                      placeholder="45000"
-                      className="input input-bordered bg-base-100 border-white/10"
-                    />
-                  </div>
-
-                  {/* Type Description */}
-                  <div className="alert bg-slate-800 border-none">
-                    <Car className="w-5 h-5 text-primary" />
-                    <span className="text-sm">{getVehicleCategoryDescription(newVehicle.type)}</span>
-                  </div>
-
-                  <button 
-                    onClick={handleAddVehicle}
-                    disabled={!newVehicle.make || !newVehicle.model || !newVehicle.year}
-                    className="btn btn-primary btn-block rounded-xl uppercase font-bold"
-                  >
-                    Add Vehicle
-                  </button>
-                </div>
               )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && editingVehicle && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-900 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-white/10">
+                <div className="sticky top-0 bg-slate-900 p-6 border-b border-white/5 flex items-center justify-between">
+                    <h2 className="text-2xl font-black uppercase italic">Edit Vehicle</h2>
+                    <button onClick={() => setShowEditModal(false)} className="btn btn-ghost btn-circle btn-sm"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-6 space-y-6">
+                    {formError && <div className="alert alert-error text-sm">{formError}</div>}
+                    {renderFormFields()}
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowEditModal(false)} className="btn btn-ghost flex-1">Cancel</button>
+                        <button onClick={handleUpdateVehicle} className="btn btn-primary flex-1">Save Changes</button>
+                    </div>
+                </div>
+            </div>
+          </div>
       )}
     </div>
   );

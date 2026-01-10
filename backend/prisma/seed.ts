@@ -107,6 +107,7 @@ async function main() {
       { name: 'Mike Chen', email: 'mike@speedyfix.com', role: UserRole.SHOP },
       { name: 'Sarah Miller', email: 'sarah@prestige.com', role: UserRole.SHOP },
       { name: 'Platform Admin', email: 'admin@vroom2go.com', role: UserRole.ADMIN },
+      { name: 'Default User', email: 'limmiinning@gmail.com', role: UserRole.OWNER },
     ];
 
     const createdUsers = [];

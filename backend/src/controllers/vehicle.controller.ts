@@ -25,16 +25,50 @@ export const getMyVehicles = async (req: any, res: Response) => {
  * @route   POST /api/vehicles
  * @access  Private
  */
+// Helper to get file URL
+const getFileUrl = (req: any) => {
+  if (!req.file) return null;
+  return `${req.protocol}://${req.get('host')}/uploads/vehicles/${req.file.filename}`;
+};
+
+// Start of the car mapping for database
+const mapCarType = (frontendType: string): any => {
+    const map: Record<string, string> = {
+        'Compact': 'COMPACT',
+        'Sedan': 'SEDAN',
+        'SUV': 'SUV',
+        'Luxury': 'LUXURY',
+        'Electric': 'EV'
+    };
+    return map[frontendType] || 'SEDAN'; // Default fallback
+};
+
+/**
+ * @desc    Add a new vehicle
+ * @route   POST /api/vehicles
+ * @access  Private
+ */
 export const addVehicle = async (req: any, res: Response) => {
   try {
-    const { vin, make, model, year, type, licensePlate, color, mileage, isPrimary } = req.body;
+    const { vin, make, model, year, type, licensePlate, color, mileage, isPrimary, trim } = req.body;
+    const imageUrl = getFileUrl(req);
 
     // If setting as primary, unset other primary vehicles for this user
-    if (isPrimary) {
+    if (isPrimary === 'true' || isPrimary === true) {
       await prisma.vehicle.updateMany({
         where: { userId: req.user.id },
         data: { isPrimary: false }
       });
+    }
+
+    // Check if VIN exists for this user (simple duplicate check)
+    // Note: Prisma might throw error if unique constraint exists, but VIN isn't globally unique in all schemas
+    // Best practice: check first
+    const existing = await prisma.vehicle.findFirst({
+        where: { userId: req.user.id, vin }
+    });
+    if (existing) {
+        return res.status(400).json({ message: 'Vehicle with this VIN already exists in your garage' });
     }
 
     const vehicle = await prisma.vehicle.create({
@@ -44,17 +78,23 @@ export const addVehicle = async (req: any, res: Response) => {
         make,
         model,
         year: parseInt(year),
-        type,
+        type: mapCarType(type),
         licensePlate,
         color,
+        trim,
         mileage: mileage ? parseInt(mileage) : null,
-        isPrimary: isPrimary || false
+        isPrimary: isPrimary === 'true' || isPrimary === true,
+        imageUrl: imageUrl || undefined
       }
     });
 
     res.status(201).json(vehicle);
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    console.error('Add vehicle error:', error);
+    res.status(500).json({ 
+        message: `Add vehicle failed: ${error.message}`,
+        details: error.meta || error.code
+    });
   }
 };
 
@@ -102,9 +142,25 @@ export const updateVehicle = async (req: any, res: Response) => {
       return res.status(403).json({ message: 'Not authorized to update this vehicle' });
     }
 
+    const imageUrl = getFileUrl(req);
+    const updateData = { ...req.body };
+    
+    // Handle numeric conversions
+    if (updateData.year) updateData.year = parseInt(updateData.year);
+    if (updateData.mileage) updateData.mileage = parseInt(updateData.mileage);
+    if (imageUrl) updateData.imageUrl = imageUrl;
+    
+    // Verify type mapping if type is being updated
+    if (updateData.type) {
+        updateData.type = mapCarType(updateData.type);
+    }
+
+    // Remove file field from body if it exists (multer handles it)
+    delete updateData.image; 
+
     const updatedVehicle = await prisma.vehicle.update({
       where: { id: vehicle.id },
-      data: req.body
+      data: updateData
     });
 
     res.json(updatedVehicle);

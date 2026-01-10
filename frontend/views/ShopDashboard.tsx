@@ -19,6 +19,7 @@ import {
   Users,
   Wrench
 } from 'lucide-react';
+import { ShopQuoteRequestsView } from './ShopQuoteRequestsView';
 
 type DashboardTab = 'overview' | 'messages' | 'quotes' | 'calendar' | 'analytics';
 
@@ -281,83 +282,7 @@ export const ShopDashboard: React.FC = () => {
 
       {/* Quotes Tab */}
       {activeTab === 'quotes' && (
-        <div className="space-y-6">
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="glass-card rounded-2xl p-5 border border-white/5">
-              <p className="text-sm text-slate-400">Pending Requests</p>
-              <p className="text-3xl font-black text-primary">{MOCK_QUOTE_REQUESTS.filter(r => r.status === 'pending').length}</p>
-            </div>
-            <div className="glass-card rounded-2xl p-5 border border-white/5">
-              <p className="text-sm text-slate-400">Quotes Sent</p>
-              <p className="text-3xl font-black">{MOCK_QUOTES.length}</p>
-            </div>
-            <div className="glass-card rounded-2xl p-5 border border-white/5">
-              <p className="text-sm text-slate-400">Accepted Rate</p>
-              <p className="text-3xl font-black text-green-400">72%</p>
-            </div>
-          </div>
-
-          <h3 className="font-bold text-lg">Incoming Requests</h3>
-          <div className="space-y-4">
-            {MOCK_QUOTE_REQUESTS.map(request => (
-              <div key={request.id} className="glass-card rounded-2xl p-5 border border-white/5">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h4 className="font-bold text-lg">
-                      {request.vehicleInfo?.year} {request.vehicleInfo?.make} {request.vehicleInfo?.model}
-                    </h4>
-                    <p className="text-sm text-slate-400">Request #{request.id.toUpperCase()}</p>
-                  </div>
-                  <span className={`badge ${
-                    request.status === 'pending' ? 'badge-warning' :
-                    request.status === 'quoted' ? 'badge-info' : 'badge-ghost'
-                  }`}>
-                    {request.status}
-                  </span>
-                </div>
-
-                <p className="text-slate-300 mb-3">{request.description}</p>
-
-                {request.symptoms && request.symptoms.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {request.symptoms.map((symptom, i) => (
-                      <span key={i} className="badge badge-ghost badge-sm">{symptom}</span>
-                    ))}
-                  </div>
-                )}
-
-                {request.photos && request.photos.length > 0 && (
-                  <div className="flex gap-2 mb-4">
-                    {request.photos.map((photo, i) => (
-                      <img key={i} src={photo} alt={`Photo ${i+1}`} className="w-16 h-12 rounded-lg object-cover" />
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => handleMessage(request)}
-                    className="btn btn-sm btn-ghost gap-1"
-                  >
-                    <MessageSquare className="w-4 h-4" /> Message
-                  </button>
-                  <button 
-                    onClick={() => handleDecline(request)}
-                    className="btn btn-sm btn-outline gap-1"
-                  >
-                    <XCircle className="w-4 h-4" /> Decline
-                  </button>
-                  <button 
-                    onClick={() => handleOpenQuoteModal(request)}
-                    className="btn btn-sm btn-primary gap-1"
-                  >
-                    <Send className="w-4 h-4" /> Send Quote
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ShopQuoteRequestsView />
       )}
 
       {/* Calendar Tab */}

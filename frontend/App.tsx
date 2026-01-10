@@ -22,6 +22,7 @@ import { FinalInvoiceView } from './views/FinalInvoiceView';
 import { AdminConsole } from './views/AdminConsole';
 import { ShopProfileSettings } from './views/ShopProfileSettings';
 import ResetPasswordView from './views/ResetPasswordView';
+import { UserQuotesView } from './views/UserQuotesView';
 import { MOCK_SERVICES, MOCK_BOOKINGS, MOCK_QUOTES } from './constants';
 
 // Placeholder view for Service Details
@@ -375,41 +376,8 @@ const App: React.FC = () => {
         );
       
       case 'quotes':
-        // Show list of quotes
         return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-black uppercase italic tracking-tighter">
-                  My <span className="text-primary">Quotes</span>
-                </h1>
-                <p className="text-slate-400">Compare quotes from shops</p>
-              </div>
-              <button onClick={() => handleNavigate('quote-request')} className="btn btn-primary gap-2">
-                + New Quote Request
-              </button>
-            </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {MOCK_QUOTES.map(quote => (
-                <div 
-                  key={quote.id}
-                  onClick={() => setSelectedQuote(quote)}
-                  className="glass-card rounded-2xl p-5 border border-white/5 cursor-pointer hover:border-primary/30 transition-all"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h3 className="font-bold">{quote.shopName}</h3>
-                      <p className="text-sm text-slate-400">{quote.status}</p>
-                    </div>
-                    <span className={`badge ${quote.guaranteed ? 'badge-success' : 'badge-warning'}`}>
-                      {quote.guaranteed ? 'Guaranteed' : 'Estimate'}
-                    </span>
-                  </div>
-                  <p className="text-2xl font-black text-primary">${quote.estimatedTotal.toFixed(2)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <UserQuotesView onNavigate={handleNavigate} />
         );
       
       case 'bookings':

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserRole, Shop } from '../types';
-import { Home, Search, Calendar, MessageSquare, User, ShieldCheck, Wrench, Menu, X, ChevronDown } from 'lucide-react';
+import { Home, Search, Calendar, MessageSquare, User, ShieldCheck, Wrench, Menu, X, ChevronDown, FileText } from 'lucide-react';
 import { FloatingChat } from './FloatingChat';
 
 interface LayoutProps {
@@ -20,8 +20,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
     { id: 'catalog', label: 'Services', icon: Search, roles: [UserRole.DRIVER] },
     { id: 'dashboard', label: 'Garage', icon: Wrench, roles: [UserRole.SHOP] },
     { id: 'admin', label: 'HQ', icon: ShieldCheck, roles: [UserRole.ADMIN] },
-    { id: 'bookings', label: 'Pit Stop', icon: Calendar, roles: [UserRole.DRIVER, UserRole.SHOP] },
-    { id: 'forum', label: 'Paddock', icon: MessageSquare, roles: [UserRole.DRIVER, UserRole.SHOP] },
+    { id: 'quotes', label: 'Quotes', icon: FileText, roles: [UserRole.DRIVER] },
+    { id: 'bookings', label: 'Bookings', icon: Calendar, roles: [UserRole.DRIVER, UserRole.SHOP] },
+    { id: 'forum', label: 'Forum', icon: MessageSquare, roles: [UserRole.DRIVER, UserRole.SHOP] },
     { id: 'profile', label: 'Profile', icon: User, roles: [UserRole.DRIVER, UserRole.SHOP, UserRole.ADMIN] },
   ];
 

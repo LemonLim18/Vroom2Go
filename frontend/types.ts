@@ -27,11 +27,11 @@ export enum BookingMethod {
 }
 
 export enum QuoteStatus {
-  DRAFT = 'Draft',
-  SUBMITTED = 'Submitted',
-  ACCEPTED = 'Accepted',
-  REJECTED = 'Rejected',
-  EXPIRED = 'Expired'
+  PENDING = 'PENDING',
+  QUOTED = 'QUOTED',
+  ACCEPTED = 'ACCEPTED',
+  REJECTED = 'REJECTED',
+  EXPIRED = 'EXPIRED'
 }
 
 export enum JobStatus {
@@ -74,7 +74,8 @@ export interface Vehicle {
   year: number;
   type: CarType;
   vin: string;
-  image: string;
+  image: string; // Legacy
+  imageUrl?: string;
   licensePlate?: string;
   trim?: string;
   color?: string;
@@ -293,7 +294,7 @@ export interface QuoteRequest {
   targetShopIds?: string[];
   broadcast: boolean;
   radius?: number;
-  status: 'pending' | 'quoted' | 'responded' | 'closed';
+  status: 'OPEN' | 'CLOSED' | 'EXPIRED';
   quotes: string[]; // Quote IDs
   createdAt: string;
 }

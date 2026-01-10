@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Vehicle, Shop, CarType } from '../types';
-import { MOCK_VEHICLES, MOCK_SHOPS } from '../constants';
 import { analyzeSymptomImage } from '../services/geminiService';
+import api from '../services/api';
 import {
   Camera,
   Upload,
@@ -54,17 +54,44 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
   onSubmit,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(preSelectedVehicle || null);
   const [description, setDescription] = useState('');
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [availableShops, setAvailableShops] = useState<Shop[]>([]);
   const [selectedShops, setSelectedShops] = useState<Shop[]>([]);
   const [broadcast, setBroadcast] = useState(true);
   const [radius, setRadius] = useState(10);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchVehicles();
+    fetchShops();
+  }, []);
+
+  const fetchVehicles = async () => {
+    try {
+      const { data } = await api.get('/vehicles');
+      setVehicles(data);
+    } catch (error) {
+        console.error('Fetch vehicles error', error);
+        // Fallback to mock not ideal but handles error
+    }
+  };
+
+  const fetchShops = async () => {
+      try {
+          const { data } = await api.get('/shops');
+          setAvailableShops(data);
+      } catch (error) {
+          console.error('Fetch shops error', error);
+      }
+  };
 
   const toggleSymptom = (symptom: string) => {
     setSelectedSymptoms(prev => 
@@ -116,20 +143,33 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
     );
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!selectedVehicle) return;
     
-    const data: QuoteRequestData = {
-      vehicleId: selectedVehicle.id,
-      description,
-      symptoms: selectedSymptoms,
-      photos,
-      targetShopIds: selectedShops.map(s => s.id),
-      broadcast,
-      radius,
-    };
-    
-    onSubmit?.(data);
+    setIsLoading(true);
+    try {
+        const requestData = {
+          vehicleId: selectedVehicle.id,
+          description: aiAnalysis ? description + '\n\nAI Analysis: ' + aiAnalysis : description,
+          symptoms: selectedSymptoms,
+          photos,
+          targetShopIds: selectedShops.map(s => s.id),
+          broadcast,
+          radius,
+        };
+        
+        await api.post('/quotes/requests', requestData); // Use newly created endpoint
+        
+        if (onSubmit) {
+            // Convert to legacy shape if needed or simply void
+            onSubmit(requestData as any);
+        }
+    } catch (error) {
+        console.error('Failed to submit quote request', error);
+        // Show error?
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const canProceedStep1 = selectedVehicle !== null;
@@ -162,7 +202,9 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
           <h2 className="text-xl font-bold">Which vehicle needs service?</h2>
           
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {MOCK_VEHICLES.map(vehicle => (
+            {vehicles.length === 0 ? (
+                <div className="col-span-full text-center py-10 opacity-50">No vehicles found. Add a vehicle first.</div>
+            ) : vehicles.map(vehicle => (
               <div 
                 key={vehicle.id}
                 onClick={() => setSelectedVehicle(vehicle)}
@@ -174,7 +216,7 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
               >
                 <div className="flex items-center gap-4">
                   <img 
-                    src={vehicle.image} 
+                    src={vehicle.imageUrl || 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&q=80'} 
                     alt={`${vehicle.make} ${vehicle.model}`}
                     className="w-20 h-14 rounded-lg object-cover"
                   />
@@ -387,7 +429,7 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
           <div>
             <p className="font-medium mb-4">Or select specific shops:</p>
             <div className="space-y-3">
-              {MOCK_SHOPS.map(shop => (
+              {availableShops.map(shop => (
                 <div 
                   key={shop.id}
                   onClick={() => toggleShop(shop)}
@@ -398,12 +440,12 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-4">
-                    <img src={shop.image} alt={shop.name} className="w-16 h-12 rounded-lg object-cover" />
+                    <img src={shop.image || 'https://via.placeholder.com/64'} alt={shop.name} className="w-16 h-12 rounded-lg object-cover" />
                     <div className="flex-1">
                       <h3 className="font-bold">{shop.name}</h3>
                       <div className="flex items-center gap-3 text-sm text-slate-400">
                         <span className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" /> {shop.distance}
+                          <MapPin className="w-3 h-3" /> {shop.distance || '0.5'} mi
                         </span>
                         <span>★ {shop.rating}</span>
                         {shop.verified && (
@@ -442,10 +484,11 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
             <button onClick={() => setStep(2)} className="btn btn-ghost">Back</button>
             <button 
               onClick={handleSubmit}
-              disabled={!canSubmit || (!broadcast && selectedShops.length === 0)}
+              disabled={!canSubmit || (!broadcast && selectedShops.length === 0) || isLoading}
               className="btn btn-primary flex-1 rounded-xl gap-2"
             >
-              <Send className="w-5 h-5" /> Submit Quote Request
+              {isLoading ? <Loader2 className="animate-spin w-5 h-5" /> : <Send className="w-5 h-5" />}
+              {isLoading ? 'Submitting...' : 'Submit Quote Request'}
             </button>
           </div>
         </div>
