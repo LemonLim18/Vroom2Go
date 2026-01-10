@@ -1,0 +1,52 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  OWNER
+  SHOP
+  ADMIN
+}
+
+model User {
+  id               Int       @id @default(autoincrement())
+  email            String    @unique
+  role             UserRole  @default(OWNER)
+  
+  conversations1   Conversation[]   @relation("c1")
+  conversations2   Conversation[]   @relation("c2")
+  shop             Shop?
+
+  @@map("users")
+}
+
+model Shop {
+  id             Int                @id @default(autoincrement())
+  userId         Int                @unique @map("user_id")
+  name           String
+  
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations  Conversation[]      @relation("ShopConversations")
+
+  @@map("shops")
+}
+
+model Conversation {
+  id            Int       @id @default(autoincrement())
+  user1Id       Int       @map("user1_id")
+  user2Id       Int       @map("user2_id")
+  shopId        Int?      @map("shop_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user1    User      @relation("c1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2    User      @relation("c2", fields: [user2Id], references: [id], onDelete: Cascade)
+  shop     Shop?     @relation("ShopConversations", fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([user1Id, user2Id])
+  @@map("conversations")
+}

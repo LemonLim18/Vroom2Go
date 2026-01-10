@@ -16,13 +16,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { id: 'home', label: 'Home', icon: Home, roles: [UserRole.OWNER] },
-    { id: 'catalog', label: 'Services', icon: Search, roles: [UserRole.OWNER] },
+    { id: 'home', label: 'Home', icon: Home, roles: [UserRole.DRIVER] },
+    { id: 'catalog', label: 'Services', icon: Search, roles: [UserRole.DRIVER] },
     { id: 'dashboard', label: 'Garage', icon: Wrench, roles: [UserRole.SHOP] },
     { id: 'admin', label: 'HQ', icon: ShieldCheck, roles: [UserRole.ADMIN] },
-    { id: 'bookings', label: 'Pit Stop', icon: Calendar, roles: [UserRole.OWNER, UserRole.SHOP] },
-    { id: 'forum', label: 'Paddock', icon: MessageSquare, roles: [UserRole.OWNER, UserRole.SHOP] },
-    { id: 'profile', label: 'Profile', icon: User, roles: [UserRole.OWNER, UserRole.SHOP, UserRole.ADMIN] },
+    { id: 'bookings', label: 'Pit Stop', icon: Calendar, roles: [UserRole.DRIVER, UserRole.SHOP] },
+    { id: 'forum', label: 'Paddock', icon: MessageSquare, roles: [UserRole.DRIVER, UserRole.SHOP] },
+    { id: 'profile', label: 'Profile', icon: User, roles: [UserRole.DRIVER, UserRole.SHOP, UserRole.ADMIN] },
   ];
 
   const filteredNav = navItems.filter(item => item.roles.includes(currentRole));
@@ -69,7 +69,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
             </div>
             <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow-2xl bg-slate-900 border border-white/5 rounded-xl w-52 mt-4">
               <li className="menu-title text-xs uppercase opacity-40">Switch Profile</li>
-              <li><button className="hover:text-primary" onClick={() => onRoleChange(UserRole.OWNER)}>Vehicle Owner</button></li>
+              <li><button className="hover:text-primary" onClick={() => onRoleChange(UserRole.DRIVER)}>Vehicle Driver</button></li>
               <li><button className="hover:text-primary" onClick={() => onRoleChange(UserRole.SHOP)}>Mechanic Shop</button></li>
               <li><button className="hover:text-primary" onClick={() => onRoleChange(UserRole.ADMIN)}>Platform Admin</button></li>
             </ul>
@@ -118,10 +118,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
               <p className="text-xs font-bold uppercase text-slate-500 mb-2">Switch Profile</p>
               <div className="grid grid-cols-1 gap-3">
                  <button 
-                  onClick={() => { onRoleChange(UserRole.OWNER); setIsMobileMenuOpen(false); }}
-                  className={`btn ${currentRole === UserRole.OWNER ? 'btn-primary' : 'btn-outline'} justify-start gap-3`}
+                  onClick={() => { onRoleChange(UserRole.DRIVER); setIsMobileMenuOpen(false); }}
+                  className={`btn ${currentRole === UserRole.DRIVER ? 'btn-primary' : 'btn-outline'} justify-start gap-3`}
                  >
-                   <User className="w-5 h-5" /> Vehicle Owner
+                   <User className="w-5 h-5" /> Vehicle Driver
                  </button>
                  <button 
                   onClick={() => { onRoleChange(UserRole.SHOP); setIsMobileMenuOpen(false); }}

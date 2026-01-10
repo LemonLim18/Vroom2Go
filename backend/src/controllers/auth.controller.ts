@@ -77,11 +77,14 @@ export const login = async (req: Request, res: Response) => {
     });
 
     if (user && (await bcrypt.compare(password, user.passwordHash))) {
+      const shop = await prisma.shop.findFirst({ where: { userId: user.id } });
+      
       res.json({
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
+        shop: shop ? { id: shop.id, name: shop.name } : null,
         token: generateToken(user.id, user.role),
       });
     } else {
@@ -107,6 +110,9 @@ export const getMe = async (req: any, res: Response) => {
         phone: true,
         avatarUrl: true,
         createdAt: true,
+        shop: {
+             select: { id: true, name: true, imageUrl: true }
+        }
       },
     });
 
@@ -126,13 +132,90 @@ export const forgotPassword = async (req: Request, res: Response) => {
     // Simulate lookup delay
     await new Promise(resolve => setTimeout(resolve, 800));
 
-    // We don't reveal if user exists for security, but we'll log it for 'dev' purposes
     const user = await prisma.user.findUnique({ where: { email } });
-    console.log(`[Forgot Password] Request for ${email}. Exists: ${!!user}`);
+
+    if (user) {
+      // Generate token
+      const crypto = require('crypto');
+      const resetToken = crypto.randomBytes(20).toString('hex');
+
+      // Hash token for saving to DB
+      const resetTokenHash = crypto
+        .createHash('sha256')
+        .update(resetToken)
+        .digest('hex');
+
+      // Set expiry to 10 minutes
+      const resetTokenExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          resetToken: resetTokenHash,
+          resetTokenExpiry
+        }
+      });
+
+      // In a real app we would send an email. For now, we log the reset link.
+      const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+      
+      console.log('============ RESET PASSWORD LINK ============');
+      console.log(`Email: ${email}`);
+      console.log(`Link: ${resetUrl}`);
+      console.log('=============================================');
+    } else {
+        console.log(`[Forgot Password] Request for ${email} - User NOT FOUND`);
+    }
 
     res.json({ message: 'If an account exists, a reset link has been sent.' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
+};
+
+// @desc    Reset password
+// @route   POST /api/auth/reset-password/:token
+export const resetPassword = async (req: Request, res: Response) => {
+    try {
+        const { token } = req.params;
+        const { password } = req.body;
+
+        const crypto = require('crypto');
+        const resetTokenHash = crypto
+            .createHash('sha256')
+            .update(token)
+            .digest('hex');
+
+        const user = await prisma.user.findFirst({
+            where: {
+                resetToken: resetTokenHash,
+                resetTokenExpiry: {
+                    gt: new Date()
+                }
+            }
+        });
+
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid or expired token' });
+        }
+
+        // Set new password
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                passwordHash,
+                resetToken: null,
+                resetTokenExpiry: null
+            }
+        });
+
+        res.json({ message: 'Password updated successfully' });
+    } catch (error: any) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }
 };

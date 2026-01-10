@@ -86,7 +86,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
   // Handle send contact message
   const handleSendContactMessage = () => {
     const recipients = [];
-    if (contactRecipients.user) recipients.push('Vehicle Owner');
+    if (contactRecipients.user) recipients.push('Driver');
     if (contactRecipients.shop) recipients.push('Shop');
     showToast(`Message sent to ${recipients.join(' and ')}`);
     setShowContactModal(false);
@@ -616,7 +616,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                     onChange={(e) => setContactRecipients(prev => ({ ...prev, user: e.target.checked }))}
                   />
                   <div>
-                    <p className="font-medium text-sm">Vehicle Owner</p>
+                    <p className="font-medium text-sm">Driver</p>
                     <p className="text-xs text-slate-500">User #{selectedItem.userId}</p>
                   </div>
                 </label>

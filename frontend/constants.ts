@@ -357,7 +357,7 @@ export const MOCK_USERS: User[] = [
     name: 'Alex Johnson',
     email: 'alex.johnson@email.com',
     phone: '(555) 111-2222',
-    role: UserRole.OWNER,
+    role: UserRole.DRIVER,
     avatar: 'https://i.pravatar.cc/150?u=user1',
     createdAt: '2023-01-15T10:30:00Z'
   },
@@ -640,7 +640,7 @@ export const MOCK_POSTS: ForumPost[] = [
     id: 'p1',
     author: 'CivicLover99',
     authorId: 'user1',
-    authorRole: UserRole.OWNER,
+    authorRole: UserRole.DRIVER,
     title: 'Strange knocking sound when turning left?',
     content: 'I have a 2018 Honda Civic. Whenever I make a sharp left turn, I hear a rhythmic knocking sound from the front right wheel. CV joint?',
     likes: 12,
@@ -648,7 +648,7 @@ export const MOCK_POSTS: ForumPost[] = [
       {
         id: 'c1',
         author: 'MechanicMike',
-        role: UserRole.OWNER,
+        role: UserRole.DRIVER,
         content: 'Definitely sounds like a CV axle. Check the boot for grease leaks.',
         date: '2 hours ago'
       },
@@ -669,7 +669,7 @@ export const MOCK_POSTS: ForumPost[] = [
   {
     id: 'p2',
     author: 'TeslaFan',
-    authorRole: UserRole.OWNER,
+    authorRole: UserRole.DRIVER,
     title: 'Range dropped significantly after update',
     content: 'Has anyone else noticed a 10% drop in range after the latest software update? Is this a known issue?',
     likes: 45,
@@ -681,7 +681,7 @@ export const MOCK_POSTS: ForumPost[] = [
   {
     id: 'p3',
     author: 'DIYer_Dan',
-    authorRole: UserRole.OWNER,
+    authorRole: UserRole.DRIVER,
     title: 'Cost of brake pad replacement - am I being overcharged?',
     content: 'Got quotes ranging from $150 to $400 for front brake pads on my 2021 RAV4. Why such a huge difference? What should I expect to pay?',
     likes: 28,

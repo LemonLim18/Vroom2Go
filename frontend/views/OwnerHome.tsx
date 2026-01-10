@@ -57,16 +57,18 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
         // Map backend snake_case to frontend camelCase
         const mappedShops = data.map((s: any) => ({
           id: s.id,
+          userId: s.userId, // CRITICAL for messaging - identifies shop owner for conversations
           name: s.name,
           address: s.address,
-          // Map fields
-          image: s.image_url || 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=1000',
+          // Map fields - support both snake_case from DB and camelCase
+          image: s.imageUrl || s.image_url || 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=1000',
+          imageUrl: s.imageUrl || s.image_url,
           rating: Number(s.rating) || 0,
-          reviewCount: s.review_count || 0,
+          reviewCount: s._count?.reviews || s.review_count || 0,
           verified: s.verified,
-          laborRate: Number(s.labor_rate),
-          warrantyDays: s.warranty_days,
-          depositPercent: s.deposit_percent,
+          laborRate: Number(s.laborRate || s.labor_rate),
+          warrantyDays: s.warrantyDays || s.warranty_days,
+          depositPercent: s.depositPercent || s.deposit_percent,
           // Mocks or calculated
           distance: '2.5 miles', 
           services: ['General Maintenance', 'Diagnostics'],

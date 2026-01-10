@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Service, ServiceCategory, Shop, CarType } from '../types';
 import { MOCK_SERVICES, MOCK_SHOPS } from '../constants';
 import { 
@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Stethoscope
 } from 'lucide-react';
+import api from '../services/api';
 
 interface ServicesPageProps {
   onServiceSelect: (service: Service) => void;
@@ -40,19 +41,51 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onServiceSelect, onS
   const [sortBy, setSortBy] = useState<SortOption>('popular');
   const [showFilters, setShowFilters] = useState(false);
 
+  const [services, setServices] = useState<Service[]>(MOCK_SERVICES); // Fallback or API
+  const [shops, setShops] = useState<Shop[]>([]);
+
+  useEffect(() => {
+    // Fetch Shops
+    const fetchShops = async () => {
+        try {
+            const { data } = await api.get('/shops');
+            // Map API data to ensure consistent field naming and userId is present
+            const mappedShops = data.map((s: any) => ({
+              id: s.id,
+              userId: s.userId, // CRITICAL for messaging
+              name: s.name,
+              address: s.address,
+              image: s.imageUrl || s.image_url || 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=1000',
+              imageUrl: s.imageUrl || s.image_url,
+              rating: Number(s.rating) || 0,
+              reviewCount: s._count?.reviews || s.review_count || 0,
+              verified: s.verified,
+              distance: '2.5 miles',
+              services: ['General Maintenance', 'Diagnostics'],
+              customPrices: {},
+              reviews: []
+            }));
+            setShops(mappedShops);
+        } catch (error) {
+            console.error('Failed to fetch shops', error);
+        }
+    };
+    fetchShops();
+  }, []);
+
   // All categories
   const categories = useMemo(() => {
-    const cats = [...new Set(MOCK_SERVICES.map(s => s.category))];
+    const cats = [...new Set(services.map(s => s.category))];
     return cats.map(cat => ({
       name: cat,
-      count: MOCK_SERVICES.filter(s => s.category === cat).length,
+      count: services.filter(s => s.category === cat).length,
       icon: CATEGORY_ICONS[cat] || Wrench
     }));
-  }, []);
+  }, [services]);
 
   // Filtered and sorted services
   const filteredServices = useMemo(() => {
-    let result = MOCK_SERVICES.filter(service => {
+    let result = services.filter(service => {
       const matchesSearch = service.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            service.description.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = !selectedCategory || service.category === selectedCategory;
@@ -84,10 +117,10 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onServiceSelect, onS
     }
 
     return result;
-  }, [searchTerm, selectedCategory, sortBy]);
+  }, [searchTerm, selectedCategory, sortBy, services]);
 
   // Featured services
-  const featuredServices = MOCK_SERVICES.slice(0, 3);
+  const featuredServices = services.slice(0, 3);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -308,7 +341,7 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onServiceSelect, onS
           Top Rated <span className="text-primary">Shops</span>
         </h2>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {MOCK_SHOPS.slice(0, 4).map(shop => (
+          {(shops.length > 0 ? shops : MOCK_SHOPS.slice(0, 4)).map(shop => (
             <div 
               key={shop.id}
               onClick={() => onShopSelect(shop)}

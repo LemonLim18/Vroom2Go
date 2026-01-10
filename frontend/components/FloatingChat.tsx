@@ -1,61 +1,159 @@
-import React, { useState } from 'react';
-import { MessageCircle, X, ChevronDown, Search, Send } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { MessageCircle, X, ChevronDown, Search } from 'lucide-react';
 import { Shop } from '../types';
-import { MOCK_SHOPS } from '../constants';
+import api from '../services/api';
+import { socket } from '../services/socket';
 
 interface FloatingChatProps {
   onOpenChat: (shop: Shop) => void;
 }
 
-interface Conversation {
-  id: string;
-  shop: Shop;
+interface BackendConversation {
+    id: number;
+    lastMessageAt: string;
+    messages: { message: string, createdAt: string, isRead: boolean }[];
+    shop: Shop | null;
+    user1Id: number;
+    user2Id: number;
+    user1: { id: number, name: string, avatarUrl: string };
+    user2: { id: number, name: string, avatarUrl: string };
+}
+
+interface ConversationDisplay {
+  id: number;
+  shop: Shop; // We treat the other party as a "Shop" for compatibility with onOpenChat
   lastMessage: string;
   timestamp: string;
   unread: number;
   online: boolean;
 }
 
-// Mock conversations data
-const MOCK_CONVERSATIONS: Conversation[] = [
-  {
-    id: 'conv1',
-    shop: MOCK_SHOPS[0],
-    lastMessage: "Your vehicle is ready for pickup! We've completed the brake service.",
-    timestamp: '2 min ago',
-    unread: 2,
-    online: true,
-  },
-  {
-    id: 'conv2',
-    shop: MOCK_SHOPS[1],
-    lastMessage: "Thanks for your inquiry. We can schedule you for tomorrow at 10 AM.",
-    timestamp: '1 hour ago',
-    unread: 0,
-    online: true,
-  },
-  {
-    id: 'conv3',
-    shop: MOCK_SHOPS[2],
-    lastMessage: "The diagnostic scan is complete. Here's what we found...",
-    timestamp: 'Yesterday',
-    unread: 0,
-    online: false,
-  },
-];
-
 export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
+  const [conversations, setConversations] = useState<ConversationDisplay[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const totalUnread = MOCK_CONVERSATIONS.reduce((sum, c) => sum + c.unread, 0);
+  // Helper to format time
+  const formatTime = (dateStr: string) => {
+      const date = new Date(dateStr);
+      const now = new Date();
+      if (date.toDateString() === now.toDateString()) {
+          return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      }
+      return date.toLocaleDateString();
+  }
 
-  const filteredConversations = MOCK_CONVERSATIONS.filter(conv =>
+  const fetchConversations = async () => {
+      try {
+          const { data } = await api.get('/conversations');
+          const userId = JSON.parse(localStorage.getItem('user') || '{}').id;
+
+          const formatted: ConversationDisplay[] = data.map((c: BackendConversation) => {
+              // Determine other party
+              // If shop exists, prefer shop details?
+              // Or check who is NOT me.
+              
+              // Backend listConversations SHOULD return logic relevant to view?
+              // But assume we get raw conversation.
+              
+              let otherPartyName = 'Unknown';
+              let otherPartyImage = 'https://via.placeholder.com/150';
+              let otherPartyId = 0;
+              let shopData: Shop | any = {};
+
+              if (c.shop) {
+                   // If conversation is linked to a shop, use shop details
+                   otherPartyName = c.shop.name;
+                   otherPartyImage = c.shop.imageUrl || otherPartyImage;
+                   // Construct shop object
+                   shopData = {
+                       ...c.shop,
+                       userId: c.user1Id === userId ? c.user2Id : c.user1Id // guess owner?
+                   };
+                   // If I am user1, and shop exists, user2 should be shop owner (or vice versa)
+                   // Actually, c.shop has userId if we selected it?
+                   // In my current query, I only selected id, name, imageUrl for shop.
+                   // I should have selected userId for shop too in backend controller!
+                   // But let's rely on user1/user2. One of them is the owner.
+                   
+                   // Wait, onOpenChat expects a Shop object.
+                   // Previous mocks had full Shop object.
+                   // Here we only have minimal info.
+                   // We need to pass enough for ChatView to work.
+                   // ChatView needs: id, name, imageUrl, userId.
+                   
+                   // Let's assume user2 is the other party.
+                   const otherUser = c.user1Id === userId ? c.user2 : c.user1;
+                   shopData = {
+                       id: c.shop.id,
+                       name: c.shop.name,
+                       imageUrl: c.shop.imageUrl,
+                       userId: otherUser.id,
+                       // fill defaults
+                       rating: 5,
+                       reviewCount: 0,
+                       address: 'Online',
+                       verified: true
+                   };
+
+              } else {
+                  // User-to-User
+                  const otherUser = c.user1Id === userId ? c.user2 : c.user1;
+                  otherPartyName = otherUser.name;
+                  otherPartyImage = otherUser.avatarUrl || otherPartyImage;
+                  otherPartyId = otherUser.id;
+                  
+                  // Construct "Shop" object for compatibility
+                  shopData = {
+                      id: 0, // 0 for user-to-user? ChatView might break if it expects real shop ID.
+                      // ChatView mainly uses it for display and fetching '/conversations/user/:userId'
+                      // So ID doesn't matter much IF we upgraded ChatView to use userId. which we did.
+                      // But FloatingChat passes "shop".
+                      userId: otherUser.id,
+                      name: otherUser.name,
+                      imageUrl: otherPartyImage,
+                       rating: 5,
+                       reviewCount: 0,
+                       address: 'Private Message',
+                       verified: false
+                  };
+              }
+
+              const lastMsg = c.messages[0];
+
+              return {
+                  id: c.id,
+                  shop: shopData,
+                  lastMessage: lastMsg ? lastMsg.message : 'Start of conversation',
+                  timestamp: c.lastMessageAt ? formatTime(c.lastMessageAt) : '',
+                  unread: 0, // TODO: calculate unread
+                  online: false // TODO: socket presence
+              };
+          });
+          
+          setConversations(formatted);
+          setLoading(false);
+      } catch (err) {
+          console.error("Failed to fetch conversations", err);
+          setLoading(false);
+      }
+  };
+
+  useEffect(() => {
+      if (isOpen) {
+          fetchConversations();
+      }
+  }, [isOpen]);
+
+  const totalUnread = conversations.reduce((sum, c) => sum + c.unread, 0);
+
+  const filteredConversations = conversations.filter(conv =>
     conv.shop.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleConversationClick = (conv: Conversation) => {
+  const handleConversationClick = (conv: ConversationDisplay) => {
     onOpenChat(conv.shop);
     setIsOpen(false);
   };
@@ -104,7 +202,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat }) => {
               <div>
                 <h3 className="font-bold text-sm">Messaging</h3>
                 <p className="text-[10px] text-slate-400">
-                  {MOCK_CONVERSATIONS.filter(c => c.online).length} shops online
+                   Recent Chats
                 </p>
               </div>
             </div>
@@ -134,7 +232,9 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat }) => {
 
               {/* Conversations List */}
               <div className="flex-1 overflow-y-auto max-h-[340px]">
-                {filteredConversations.length === 0 ? (
+                {loading ? (
+                    <div className="p-8 text-center text-slate-500">Loading chats...</div>
+                ) : filteredConversations.length === 0 ? (
                   <div className="text-center py-8 px-4">
                     <MessageCircle className="w-10 h-10 text-slate-600 mx-auto mb-3" />
                     <p className="text-slate-400 text-sm">No conversations found</p>
@@ -151,7 +251,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat }) => {
                       {/* Avatar */}
                       <div className="relative flex-shrink-0">
                         <img
-                          src={conv.shop.image}
+                          src={conv.shop.imageUrl || conv.shop.image || 'https://via.placeholder.com/40'}
                           alt={conv.shop.name}
                           className="w-10 h-10 rounded-full object-cover border-2 border-white/10"
                         />

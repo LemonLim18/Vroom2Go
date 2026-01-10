@@ -1,0 +1,42 @@
+// This is your Prisma schema file
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  OWNER
+  SHOP
+  ADMIN
+}
+
+model User {
+  id               Int       @id @default(autoincrement())
+  email            String    @unique
+  passwordHash     String    @map("password_hash")
+  name             String
+  role             UserRole  @default(OWNER)
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  conversations1   Conversation[]   @relation("c1")
+  conversations2   Conversation[]   @relation("c2")
+
+  @@map("users")
+}
+
+model Conversation {
+  id            Int       @id @default(autoincrement())
+  user1Id       Int       @map("user1_id")
+  user2Id       Int       @map("user2_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user1    User      @relation("c1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2    User      @relation("c2", fields: [user2Id], references: [id], onDelete: Cascade)
+
+  @@unique([user1Id, user2Id])
+  @@map("conversations")
+}

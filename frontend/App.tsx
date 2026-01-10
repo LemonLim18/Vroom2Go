@@ -21,6 +21,7 @@ import { JobProgressView } from './views/JobProgressView';
 import { FinalInvoiceView } from './views/FinalInvoiceView';
 import { AdminConsole } from './views/AdminConsole';
 import { ShopProfileSettings } from './views/ShopProfileSettings';
+import ResetPasswordView from './views/ResetPasswordView';
 import { MOCK_SERVICES, MOCK_BOOKINGS, MOCK_QUOTES } from './constants';
 
 // Placeholder view for Service Details
@@ -63,7 +64,7 @@ const ServiceDetails: React.FC<{service: Service, onBack: () => void, onCompare:
 );
 
 const App: React.FC = () => {
-  const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.OWNER);
+  const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.DRIVER);
   const [currentView, setCurrentView] = useState<string>('home');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingMode, setOnboardingMode] = useState<'signup' | 'login'>('signup');
@@ -81,10 +82,36 @@ const App: React.FC = () => {
   const [bookingServiceId, setBookingServiceId] = useState<string | undefined>(undefined);
   const [activeChatShop, setActiveChatShop] = useState<Shop | null>(null);
 
+  // Helper to map backend role to frontend role (backend uses OWNER, frontend uses DRIVER)
+  const mapBackendRole = (backendRole: string): UserRole => {
+    if (backendRole === 'OWNER') return UserRole.DRIVER;
+    if (backendRole === 'SHOP') return UserRole.SHOP;
+    if (backendRole === 'ADMIN') return UserRole.ADMIN;
+    return UserRole.DRIVER; // Default fallback
+  };
+
   // Check for active session
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+
+      // 1. Quick restore from local storage if available
+      if (token && storedUser) {
+        try {
+            const parsedUser = JSON.parse(storedUser);
+            if (parsedUser.role) {
+                const mappedRole = mapBackendRole(parsedUser.role);
+                setCurrentRole(mappedRole);
+                if (mappedRole === UserRole.SHOP && currentView === 'home') {
+                    setCurrentView('dashboard');
+                }
+            }
+        } catch (e) {
+            console.error('Failed to parse stored user', e);
+        }
+      }
+
       if (!token) {
         setShowOnboarding(true);
         setIsLoading(false);
@@ -93,14 +120,20 @@ const App: React.FC = () => {
 
       try {
         const { data } = await api.get('/auth/me');
-        setCurrentRole(data.user.role as UserRole);
-        // If shop, redirect to dashboard
-        if (data.user.role === UserRole.SHOP) {
+        // Update storage with fresh data
+        localStorage.setItem('user', JSON.stringify(data));
+        
+        const mappedRole = mapBackendRole(data.role);
+        setCurrentRole(mappedRole);
+        
+        // If shop, redirect to dashboard if not deeper in nav
+        if (mappedRole === UserRole.SHOP && currentView === 'home') {
           setCurrentView('dashboard');
         }
       } catch (error) {
         console.error('Session expired:', error);
         localStorage.removeItem('token');
+        localStorage.removeItem('user');
         setShowOnboarding(true);
       } finally {
         setIsLoading(false);
@@ -108,6 +141,15 @@ const App: React.FC = () => {
     };
 
     checkAuth();
+  }, []);
+
+  // Check for reset token
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('token')) {
+        setCurrentView('reset-password');
+        setIsLoading(false);
+    }
   }, []);
 
   if (isLoading) {
@@ -272,7 +314,7 @@ const App: React.FC = () => {
         return <ShopDashboard />;
       
       case 'profile':
-        if (currentRole === UserRole.OWNER) return (
+        if (currentRole === UserRole.DRIVER) return (
           <UserProfile 
             onLogin={() => {
               setOnboardingMode('login');
@@ -423,6 +465,9 @@ const App: React.FC = () => {
             onDispute={() => handleNavigate('bookings')}
           />
         );
+      
+      case 'reset-password':
+        return <ResetPasswordView />;
       
       default:
         return <div className="p-10 text-center">Page Under Construction</div>;

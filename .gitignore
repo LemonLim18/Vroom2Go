@@ -16,3 +16,10 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+
+# User Uploads
+backend/uploads/
+
+# Specific node_modules (optional as node_modules/ covers but for clarity)
+backend/node_modules/
+frontend/node_modules/

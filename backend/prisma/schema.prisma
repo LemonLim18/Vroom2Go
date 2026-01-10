@@ -148,16 +148,18 @@ enum NotificationType {
 
 // Models
 model User {
-  id            Int      @id @default(autoincrement())
-  email         String   @unique
-  passwordHash  String   @map("password_hash")
-  name          String
-  phone         String?
-  avatarUrl     String?  @map("avatar_url")
-  role          UserRole @default(OWNER)
-  emailVerified Boolean  @default(false) @map("email_verified")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id               Int       @id @default(autoincrement())
+  email            String    @unique
+  passwordHash     String    @map("password_hash")
+  name             String
+  phone            String?
+  avatarUrl        String?   @map("avatar_url")
+  role             UserRole  @default(OWNER)
+  emailVerified    Boolean   @default(false) @map("email_verified")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  resetToken       String?   @map("reset_token")
+  resetTokenExpiry DateTime? @map("reset_token_expiry")
 
   // Relations
   vehicles         Vehicle[]
@@ -176,7 +178,8 @@ model User {
   resolvedDisputes Dispute[]        @relation("ResolvedDisputes")
   disputes         Dispute[]        @relation("UserDisputes")
   Quote            Quote[]
-  Conversation     Conversation[]
+  conversations1   Conversation[]   @relation("c1")
+  conversations2   Conversation[]   @relation("c2")
 
   @@index([email])
   @@index([role])
@@ -220,7 +223,7 @@ model Shop {
   bookings       Booking[]
   quotes         Quote[]
   reviews        Review[]
-  conversations  Conversation[]
+  conversations  Conversation[]      @relation("ShopConversations")
   comments       Comment[]
   disputes       Dispute[]
 
@@ -400,17 +403,17 @@ model Booking {
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  shop          Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  vehicle       Vehicle        @relation(fields: [vehicleId], references: [id])
-  service       Service?       @relation(fields: [serviceId], references: [id])
-  quote         Quote?         @relation(fields: [quoteId], references: [id])
-  updates       JobUpdate[]
-  invoice       Invoice?
-  payments      Payment[]
-  reviews       Review[]
-  conversations Conversation[]
-  disputes      Dispute[]
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shop         Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle       @relation(fields: [vehicleId], references: [id])
+  service      Service?      @relation(fields: [serviceId], references: [id])
+  quote        Quote?        @relation(fields: [quoteId], references: [id])
+  updates      JobUpdate[]
+  invoice      Invoice?
+  payments     Payment[]
+  reviews      Review[]
+  disputes     Dispute[]
+  conversation Conversation? @relation("BookingConversation")
 
   @@index([status])
   @@index([scheduledDate])
@@ -532,6 +535,25 @@ model Review {
   @@map("reviews")
 }
 
+model Conversation {
+  id            Int       @id @default(autoincrement())
+  user1Id       Int       @map("user1_id")
+  user2Id       Int       @map("user2_id")
+  shopId        Int?      @map("shop_id")
+  bookingId     Int?      @unique @map("booking_id")
+  lastMessageAt DateTime? @map("last_message_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user1    User      @relation("c1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2    User      @relation("c2", fields: [user2Id], references: [id], onDelete: Cascade)
+  shop     Shop?     @relation("ShopConversations", fields: [shopId], references: [id], onDelete: Cascade)
+  booking  Booking?  @relation("BookingConversation", fields: [bookingId], references: [id])
+  messages Message[]
+
+  @@unique([user1Id, user2Id])
+  @@map("conversations")
+}
+
 model Message {
   id             Int      @id @default(autoincrement())
   conversationId Int      @map("conversation_id")
@@ -547,23 +569,6 @@ model Message {
   @@index([conversationId])
   @@index([createdAt])
   @@map("messages")
-}
-
-model Conversation {
-  id            Int       @id @default(autoincrement())
-  userId        Int       @map("user_id")
-  shopId        Int       @map("shop_id")
-  bookingId     Int?      @map("booking_id")
-  lastMessageAt DateTime? @map("last_message_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  booking  Booking?  @relation(fields: [bookingId], references: [id])
-  messages Message[]
-
-  @@unique([userId, shopId])
-  @@map("conversations")
 }
 
 model Dispute {

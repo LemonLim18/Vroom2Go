@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ShopChatInterface } from '../components/ShopChatInterface';
 import { MOCK_BOOKINGS, MOCK_QUOTES, MOCK_QUOTE_REQUESTS } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { 
@@ -19,7 +20,7 @@ import {
   Wrench
 } from 'lucide-react';
 
-type DashboardTab = 'overview' | 'quotes' | 'calendar' | 'analytics';
+type DashboardTab = 'overview' | 'messages' | 'quotes' | 'calendar' | 'analytics';
 
 const revenueData = [
   { name: 'Mon', revenue: 400 },
@@ -98,6 +99,7 @@ export const ShopDashboard: React.FC = () => {
 
   const tabs = [
     { id: 'overview' as const, label: 'Overview', icon: TrendingUp },
+    { id: 'messages' as const, label: 'Messages', icon: MessageSquare },
     { id: 'quotes' as const, label: 'Quote Requests', icon: FileText, badge: MOCK_QUOTE_REQUESTS.length },
     { id: 'calendar' as const, label: 'Availability', icon: Calendar },
     { id: 'analytics' as const, label: 'Analytics', icon: BarChart },
@@ -268,6 +270,13 @@ export const ShopDashboard: React.FC = () => {
             </div>
           )}
         </>
+      )}
+
+      {/* Messages Tab */}
+      {activeTab === 'messages' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+           <ShopChatInterface />
+        </div>
       )}
 
       {/* Quotes Tab */}

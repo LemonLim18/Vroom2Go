@@ -12,6 +12,7 @@ import bookingRoutes from './routes/booking.routes';
 import vehicleRoutes from './routes/vehicle.routes';
 import conversationRoutes from './routes/conversation.routes';
 import forumRoutes from './routes/forum.routes';
+import uploadRoutes from './routes/upload.routes';
 
 const app: Application = express();
 
@@ -20,7 +21,17 @@ const limiter = rateLimit({
   max: 100
 });
 
-app.use(helmet());
+// Serve uploaded files statically BEFORE helmet to avoid CORP restrictions
+// Add CORS headers to allow cross-origin access from frontend
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
+}, express.static(path.join(__dirname, '../uploads')));
+
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -49,6 +60,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/forum', forumRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
