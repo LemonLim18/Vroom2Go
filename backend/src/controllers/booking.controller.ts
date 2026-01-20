@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient, BookingStatus, JobStatus } from '@prisma/client';
+import { notifyBookingStatusChange, notifyBookingConfirmed } from './notification.controller';
 
 const prisma = new PrismaClient();
 
@@ -156,6 +157,17 @@ export const updateBookingStatus = async (req: any, res: Response) => {
         createdBy: req.user.id
       }
     });
+
+    // Notify the customer about status change
+    try {
+      if (status === 'CONFIRMED') {
+        notifyBookingConfirmed(booking.userId, booking.shop.name || 'Your shop', booking.id);
+      } else {
+        notifyBookingStatusChange(booking.userId, status, booking.id);
+      }
+    } catch (notifyErr) {
+      console.warn('Failed to send booking notification:', notifyErr);
+    }
 
     res.json(updatedBooking);
   } catch (error: any) {

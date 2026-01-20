@@ -26,20 +26,24 @@ const storage = multer.diskStorage({
     }
 });
 
-// File filter for images and PDFs
+// File filter for images, PDFs, and videos
 const fileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     const allowedMimes = [
         'image/jpeg',
         'image/png',
         'image/gif',
         'image/webp',
-        'application/pdf'
+        'application/pdf',
+        'video/mp4',
+        'video/webm',
+        'video/quicktime',
+        'video/x-msvideo'
     ];
     
     if (allowedMimes.includes(file.mimetype)) {
         cb(null, true);
     } else {
-        cb(new Error('Invalid file type. Only images (JPG, PNG, GIF, WebP) and PDFs are allowed.'));
+        cb(new Error('Invalid file type. Only images, videos, and PDFs are allowed.'));
     }
 };
 
@@ -48,7 +52,7 @@ const upload = multer({
     storage,
     fileFilter,
     limits: {
-        fileSize: 10 * 1024 * 1024 // 10MB limit
+        fileSize: 200 * 1024 * 1024 // 200MB limit for videos
     }
 });
 
@@ -77,6 +81,59 @@ router.post('/chat', protect, upload.single('file'), (req: Request, res: Respons
         console.error('Upload error:', error);
         res.status(500).json({ message: error.message });
     }
+});
+
+/**
+ * @desc    General file upload (for forum posts, etc.)
+ * @route   POST /api/upload
+ * @access  Protected
+ */
+router.post('/', protect, (req: Request, res: Response, next) => {
+    upload.single('file')(req, res, (err: any) => {
+        if (err) {
+            console.error('Multer error:', err);
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ 
+                    message: 'File too large. Maximum size is 200MB.' 
+                });
+            }
+            if (err.message) {
+                return res.status(400).json({ 
+                    message: err.message 
+                });
+            }
+            return res.status(400).json({ 
+                message: 'File upload failed' 
+            });
+        }
+
+        try {
+            if (!req.file) {
+                return res.status(400).json({ message: 'No file uploaded' });
+            }
+
+            console.log('File uploaded successfully:', {
+                filename: req.file.filename,
+                originalname: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size
+            });
+
+            // Build the URL path for the uploaded file
+            const fileUrl = `/uploads/chat/${req.file.filename}`;
+            
+            res.json({
+                success: true,
+                url: fileUrl,
+                filename: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size
+            });
+        } catch (error: any) {
+            console.error('Upload error:', error);
+            res.status(500).json({ message: error.message });
+        }
+    });
 });
 
 // Ensure reviews upload directory exists

@@ -248,6 +248,8 @@ export interface ForumPost {
   isAiAnswered?: boolean;
   vehicle?: { make: string; model: string; year: number };
   createdAt?: string;
+  updatedAt?: string;
+  isEdited?: boolean;
   viewCount?: number;
 }
 

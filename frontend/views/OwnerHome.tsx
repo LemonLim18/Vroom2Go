@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { MOCK_SERVICES, MOCK_DIAGNOSTIC_PACKAGES, MOCK_VEHICLES } from '../constants';
+// All data fetched from database - no mock imports
 import { Search, MapPin, Star, Zap, Gauge, ArrowRight, Wrench, Car, ChevronLeft, ChevronRight, Sparkles, Clock, ShieldCheck, Gift, TrendingUp, Calendar, Stethoscope } from 'lucide-react';
-import { Service, Shop, DiagnosticPackage } from '../types';
+import { Service, Shop, DiagnosticPackage, Vehicle, CarType } from '../types';
 
 interface OwnerHomeProps {
   onServiceSelect: (service: Service) => void;
@@ -47,44 +47,98 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
 
   const [shops, setShops] = useState<Shop[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [diagnosticPackages, setDiagnosticPackages] = useState<DiagnosticPackage[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch shops
+  // Fetch data
   useEffect(() => {
-    const fetchShops = async () => {
+    const fetchData = async () => {
       try {
-        const { data } = await api.get('/shops');
-        // Map backend snake_case to frontend camelCase
-        const mappedShops = data.map((s: any) => ({
-          id: s.id,
-          userId: s.userId, // CRITICAL for messaging - identifies shop owner for conversations
-          name: s.name,
-          address: s.address,
-          // Map fields - support both snake_case from DB and camelCase
-          image: s.imageUrl || s.image_url || 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=1000',
-          imageUrl: s.imageUrl || s.image_url,
-          rating: Number(s.rating) || 0,
-          reviewCount: s._count?.reviews || s.review_count || 0,
-          verified: s.verified,
-          laborRate: Number(s.laborRate || s.labor_rate),
-          warrantyDays: s.warrantyDays || s.warranty_days,
-          depositPercent: s.depositPercent || s.deposit_percent,
-          // Mocks or calculated
-          distance: '2.5 miles', 
-          services: ['General Maintenance', 'Diagnostics'],
-          availability: {}, 
-          customPrices: {},
-          reviews: [] 
-        }));
-        setShops(mappedShops);
-      } catch (error) {
-        console.error('Failed to fetch shops:', error);
+        // Fetch shops
+        try {
+          const shopsRes = await api.get('/shops');
+          const mappedShops = shopsRes.data.map((s: any) => ({
+            id: s.id,
+            userId: s.userId,
+            name: s.name,
+            address: s.address,
+            image: s.imageUrl || s.image_url || 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=1000',
+            imageUrl: s.imageUrl || s.image_url,
+            rating: Number(s.rating) || 0,
+            reviewCount: s._count?.reviews || s.review_count || 0,
+            verified: s.verified,
+            laborRate: Number(s.laborRate || s.labor_rate),
+            warrantyDays: s.warrantyDays || s.warranty_days,
+            depositPercent: s.depositPercent || s.deposit_percent,
+            distance: '2.5 miles', 
+            services: s.services?.map((svc: any) => svc.service?.name).filter(Boolean) || ['General'],
+            availability: {}, 
+            customPrices: {},
+            reviews: [] 
+          }));
+          setShops(mappedShops);
+        } catch (e) { console.error('Failed to fetch shops:', e); }
+
+        // Fetch vehicles
+        try {
+          const vehiclesRes = await api.get('/vehicles');
+          const mappedVehicles = vehiclesRes.data.map((v: any) => ({
+            ...v,
+            image: v.imageUrl || 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&q=80&w=1000'
+          }));
+          setVehicles(mappedVehicles);
+        } catch (e) { console.error('Failed to fetch vehicles:', e); }
+
+        // Fetch services
+        try {
+          const servicesRes = await api.get('/services');
+          const mappedServices: Service[] = servicesRes.data.map((s: any) => {
+            const priceRange: any = {};
+            if (Array.isArray(s.pricing)) {
+              s.pricing.forEach((p: any) => {
+                const typeMap: any = { 'COMPACT': 'Compact', 'SEDAN': 'Sedan', 'SUV': 'SUV', 'LUXURY': 'Luxury', 'EV': 'Electric' };
+                const key = typeMap[p.vehicleType] || p.vehicleType;
+                priceRange[key] = `$${p.minPrice} - $${p.maxPrice}`;
+              });
+            }
+            const categoryMap: any = { 'MAINTENANCE': 'Maintenance', 'REPAIR': 'Repair', 'DIAGNOSTIC': 'Diagnostic' };
+            const mappedCategory = categoryMap[s.category] || s.category;
+            return {
+              id: String(s.id),
+              name: s.name,
+              category: mappedCategory,
+              description: s.description,
+              duration: s.durationEst ? `${s.durationEst} mins` : '60 mins',
+              warranty: s.warranty,
+              includes: s.includes || [],
+              priceRange: Object.keys(priceRange).length > 0 ? priceRange : { 'Sedan': 'Call for price' }
+            };
+          });
+          setServices(mappedServices);
+        } catch (e) { console.error('Failed to fetch services:', e); }
+
+        // Fetch diagnostic packages
+        try {
+          const diagPackagesRes = await api.get('/diagnostic-packages');
+          const mappedDiagPackages: DiagnosticPackage[] = diagPackagesRes.data.map((pkg: any) => ({
+            id: String(pkg.id),
+            name: pkg.name,
+            description: pkg.description,
+            price: Number(pkg.price),
+            duration: pkg.duration,
+            includes: pkg.includes || []
+          }));
+          setDiagnosticPackages(mappedDiagPackages);
+        } catch (e) { console.error('Failed to fetch diagnostic packages:', e); }
+
       } finally {
         setLoading(false);
       }
     };
 
-    fetchShops();
+    fetchData();
   }, []);
 
   // Auto-rotate promotions
@@ -95,7 +149,7 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
     return () => clearInterval(timer);
   }, []);
 
-  const filteredServices = MOCK_SERVICES.filter(s => 
+  const filteredServices = services.filter(s => 
     s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     s.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -148,7 +202,7 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
             <Car className="w-6 h-6 text-blue-400" />
           </div>
           <h3 className="font-bold">My Garage</h3>
-          <p className="text-xs text-slate-400 mt-1">{MOCK_VEHICLES.length} vehicles</p>
+          <p className="text-xs text-slate-400 mt-1">{vehicles.length} vehicles</p>
         </button>
         
         <button 
@@ -252,7 +306,7 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
         </div>
         
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {MOCK_DIAGNOSTIC_PACKAGES.map((pkg) => (
+          {diagnosticPackages.map((pkg) => (
             <div 
               key={pkg.id}
               className="glass-card rounded-2xl p-5 border border-white/5 hover:border-primary/30 transition-all cursor-pointer group"
@@ -335,7 +389,7 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
               <div className="pt-4 border-t border-white/5 flex justify-between items-center">
                  <div>
                    <span className="text-[10px] uppercase font-black text-slate-600 block mb-1">Starts at</span>
-                   <div className="text-2xl font-black italic tracking-tighter text-white">{service.priceRange['Sedan'].split('-')[0]}</div>
+                   <div className="text-2xl font-black italic tracking-tighter text-white">{service.priceRange[CarType.SEDAN]?.split('-')[0] || '$Call'}</div>
                  </div>
                  <button className="btn btn-circle btn-primary" onClick={() => onServiceSelect(service)}>
                     <ArrowRight className="w-5 h-5" />

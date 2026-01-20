@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listConversations, getConversationById, sendMessage, getOrCreateConversation, sendMessageToUser } from '../controllers/conversation.controller';
+import { listConversations, getConversationById, sendMessage, getOrCreateConversation, sendMessageToUser, markConversationAsRead } from '../controllers/conversation.controller';
 import { protect } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -19,5 +19,8 @@ router.get('/:id', protect, getConversationById);
 
 // Send message to a specific conversation
 router.post('/:id/messages', protect, sendMessage);
+
+// Mark conversation as read
+router.put('/:id/read', protect, markConversationAsRead);
 
 export default router;

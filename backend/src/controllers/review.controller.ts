@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { notifyNewReview } from './notification.controller';
 
 const prisma = new PrismaClient();
 
@@ -82,6 +83,19 @@ export const createReview = async (req: any, res: Response) => {
         reviewCount: shopReviews.length
       }
     });
+
+    // Notify shop owner about the new review
+    try {
+      const shop = await prisma.shop.findUnique({
+        where: { id: parseInt(shopId) },
+        select: { userId: true }
+      });
+      if (shop) {
+        notifyNewReview(shop.userId, parseInt(rating));
+      }
+    } catch (notifyErr) {
+      console.warn('Failed to send review notification:', notifyErr);
+    }
 
     res.status(201).json(review);
   } catch (error: any) {

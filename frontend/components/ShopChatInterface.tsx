@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, MessageCircle, Send, Search, Clock, CheckCheck, Paperclip, FileText, X, Loader2 } from 'lucide-react';
+import { User, MessageCircle, Send, Search, Clock, CheckCheck, Paperclip, FileText, X, Loader2, Download, ChevronLeft, Phone, Video } from 'lucide-react';
 import api from '../services/api';
 import { socket } from '../services/socket';
+import { showAlert } from '../utils/alerts';
 
 interface ChatUser {
   id: number;
@@ -12,6 +13,7 @@ interface ChatUser {
 interface Conversation {
   id: number;
   lastMessageAt: string;
+  unreadCount: number;
   user: ChatUser; // The other party (customer)
   messages: {
     message: string;
@@ -30,7 +32,11 @@ interface Message {
   attachmentType?: 'image' | 'pdf';
 }
 
-export const ShopChatInterface: React.FC = () => {
+interface ShopChatInterfaceProps {
+    initialTargetUserId?: number;
+}
+
+export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTargetUserId }) => {
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [selectedConvoId, setSelectedConvoId] = useState<number | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
@@ -41,6 +47,7 @@ export const ShopChatInterface: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [pendingAttachment, setPendingAttachment] = useState<{ url: string; type: 'image' | 'pdf'; name: string } | null>(null);
     const [uploading, setUploading] = useState(false);
+    const initializedRef = useRef(false);
 
     const checkUser = () => {
         const userStr = localStorage.getItem('user');
@@ -66,37 +73,9 @@ export const ShopChatInterface: React.FC = () => {
 
                 // Logic matched from FloatingChat to handle Shop vs User
                 if (c.shop) {
-                    // If conversation is linked to a shop
-                    // If I am the shop owner, I see the User.
-                    // If I am the User, I see the Shop.
-                    
-                    // How to know if I am the shop owner? 
-                    // We can check if `c.shop.userId === currentUserId`.
-                    // BUT `c.shop` in list might not have userId if backend doesn't assume it.
-                    // However, `FloatingChat` logic used:
-                    // `const otherUser = c.user1Id === userId ? c.user2 : c.user1;`
-                    // And if `c.shop` exists, it constructed a shop object.
-                    
-                    // Wait, if I am the Shop Owner, I want to see the CUSTOMER (User).
-                    // If I am the Customer, I want to see the SHOP.
-                    
-                    // Let's look at `c.user1Id` and `c.user2Id`.
-                    const otherUser = c.user1Id === currentUserId ? c.user2 : c.user1;
-                    
-                    // Am I the owner of this shop? (Check if my ID matches one of the user IDs relative to the shop... wait)
-                    // The backend returns `shop: { userId: ... }` if we select it.
-                    // Let's assume for now:
-                    // If I am NOT the shop owner, show Shop details.
-                    // If I am the shop owner, show Customer details.
-                    
-                    // Simplified heuristic: 
-                    // If `c.shop.userId === currentUserId`, I am the shop. Show `otherUser`.
-                    // If `c.shop.userId !== currentUserId`, I am the customer. Show `c.shop`.
-                    
-                    // Note: `conversation.controller.ts` includes `shop: { userId: true ... }`. So we have it.
-                    
                     if (c.shop.userId === currentUserId) {
                          // I own the shop -> Show Customer
+                         const otherUser = c.user1Id === currentUserId ? c.user2 : c.user1;
                          participantName = otherUser?.name || 'Unknown User';
                          participantImage = otherUser?.avatarUrl;
                          participantId = otherUser?.id || 0;
@@ -104,9 +83,7 @@ export const ShopChatInterface: React.FC = () => {
                          // I am customer -> Show Shop
                          participantName = c.shop.name;
                          participantImage = c.shop.imageUrl || c.shop.image;
-                         participantId = c.shop.id; // Using Link to Shop ID? 
-                         // Note: The click handler sets `selectedConvoId` which is conversation ID. 
-                         // The UI display just needs name/avatar.
+                         participantId = c.shop.id; 
                     }
 
                 } else {
@@ -120,7 +97,8 @@ export const ShopChatInterface: React.FC = () => {
                 return {
                     id: c.id,
                     lastMessageAt: c.lastMessageAt,
-                    user: { // Keeping property name 'user' to verify minimal code change, but semantic is 'participant'
+                    unreadCount: c._count?.messages || 0,
+                    user: { 
                         id: participantId,
                         name: participantName,
                         avatarUrl: participantImage
@@ -128,18 +106,97 @@ export const ShopChatInterface: React.FC = () => {
                     messages: c.messages || []
                 };
             });
-            setConversations(transformedConvos);
-            setLoading(false);
+            return transformedConvos;
         } catch (err) {
             console.error(err);
-            setLoading(false);
+            return [];
         }
+    };
+
+    const initializeChat = async () => {
+        if (initializedRef.current) return;
+        initializedRef.current = true;
+        setLoading(true);
+
+        const convos = await fetchConversations();
+        
+        // Handle auto-selection if target user is provided
+        if (initialTargetUserId) {
+             try {
+                 const { data: targetConvo } = await api.get(`/conversations/user/${initialTargetUserId}`);
+                 
+                 // Check if this conversation is already in our list
+                 const exists = convos.find((c: Conversation) => c.id === targetConvo.id);
+                 
+                 if (!exists) {
+                     // Get user details or shop details for the list item
+                     // Similar transformation logic...
+                     // For simplicity, let's just make a basic object or refetch (but refetch might not show it if it has no messages? Backend usually returns empty conversations)
+                     // Best is to conform to the structure
+                     
+                     // We can just add it to the state
+                     // BUT we need to transform it correctly.
+                     
+                     // Quick fix: Add it to the list using the returned detailed data
+                     // We need the same logic as above to determine participant
+                     const userStr = localStorage.getItem('user');
+                     const currentUserId = userStr ? JSON.parse(userStr).id : 0;
+                     
+                     let participantName = 'New Chat';
+                     let participantImage = undefined;
+                     let participantId = 0;
+                     
+                     if (targetConvo.shop) {
+                         if (targetConvo.shop.userId === currentUserId) {
+                             const otherUser = targetConvo.user1Id === currentUserId ? targetConvo.user2 : targetConvo.user1;
+                             participantName = otherUser?.name;
+                             participantImage = otherUser?.avatarUrl;
+                             participantId = otherUser?.id;
+                         } else {
+                             participantName = targetConvo.shop.name;
+                             participantImage = targetConvo.shop.imageUrl;
+                             participantId = targetConvo.shop.id;
+                         }
+                     } else {
+                         const otherUser = targetConvo.user1Id === currentUserId ? targetConvo.user2 : targetConvo.user1;
+                         participantName = otherUser?.name;
+                         participantImage = otherUser?.avatarUrl;
+                         participantId = otherUser?.id;
+                     }
+                     
+                     const newConvoItem: Conversation = {
+                         id: targetConvo.id,
+                         lastMessageAt: targetConvo.lastMessageAt || new Date().toISOString(),
+                         unreadCount: 0,
+                         user: {
+                             id: participantId,
+                             name: participantName,
+                             avatarUrl: participantImage
+                         },
+                         messages: []
+                     };
+                     
+                     setConversations([newConvoItem, ...convos]);
+                 } else {
+                     setConversations(convos);
+                 }
+                 
+                 setSelectedConvoId(targetConvo.id);
+             } catch (err) {
+                 console.error("Failed to load target conversation", err);
+                 setConversations(convos);
+             }
+        } else {
+            setConversations(convos);
+        }
+        
+        setLoading(false);
     };
 
     useEffect(() => {
         checkUser();
-        fetchConversations();
-    }, []);
+        initializeChat();
+    }, [initialTargetUserId]); // Re-run if target changes
 
     // Socket subscription
     useEffect(() => {
@@ -150,27 +207,33 @@ export const ShopChatInterface: React.FC = () => {
         socket.emit('join_room', roomId);
 
         const handleReceive = (msg: any) => {
-             const type = msg.attachmentUrl?.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
-             const newMsg: Message = {
-                id: msg.id,
-                senderId: msg.senderId,
-                text: msg.text,
-                time: new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-                isMine: msg.senderId === myUserId,
-                attachmentUrl: msg.attachmentUrl,
-                attachmentType: msg.attachmentUrl ? type : undefined
-             };
+             // Deduplicate: If we already have this message (e.g. from optimistic update), ignore
              setMessages(prev => {
-                if (prev.some(m => m.id === newMsg.id)) return prev;
+                const isDuplicate = prev.some(m => m.id === msg.id || (m.text === msg.text && m.isMine && Math.abs(new Date(m.time).getTime() - new Date(msg.time).getTime()) < 5000));
+                if (isDuplicate) return prev;
+                
+                const type = msg.attachmentUrl?.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
+                const newMsg: Message = {
+                    id: msg.id,
+                    senderId: msg.senderId,
+                    text: msg.text,
+                    time: new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                    isMine: msg.senderId === myUserId,
+                    attachmentUrl: msg.attachmentUrl,
+                    attachmentType: msg.attachmentUrl ? type : undefined
+                };
                 return [...prev, newMsg];
              });
              
-             // Update sidebar last message
+             // Update sidebar last message and unread count
              setConversations(prev => prev.map(c => {
-                 if (c.id === selectedConvoId) {
+                 if (c.id === msg.conversationId) {
+                     const isViewing = selectedConvoId === msg.conversationId;
+                     
                      return {
                          ...c,
                          lastMessageAt: new Date().toISOString(),
+                         unreadCount: isViewing ? 0 : (c.unreadCount + 1),
                          messages: [{
                              message: msg.text,
                              createdAt: new Date().toISOString(),
@@ -190,6 +253,24 @@ export const ShopChatInterface: React.FC = () => {
         };
     }, [selectedConvoId, myUserId]);
 
+
+    const handleSelectConversation = async (id: number) => {
+        setSelectedConvoId(id);
+        
+        // Optimistic update to clear unread count
+        setConversations(prev => prev.map(c => {
+            if (c.id === id && c.unreadCount > 0) {
+                return { ...c, unreadCount: 0 };
+            }
+            return c;
+        }));
+
+        try {
+            await api.put(`/conversations/${id}/read`);
+        } catch (error) {
+            console.error('Failed to mark conversation as read', error);
+        }
+    };
 
     // Load messages when selecting a conversation
     useEffect(() => {
@@ -234,14 +315,15 @@ export const ShopChatInterface: React.FC = () => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const isImage = file.type.startsWith('image/');
-        const isPdf = file.type === 'application/pdf';
-        
-        if (!isImage && !isPdf) {
-            alert('Only images and PDFs are allowed');
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'];
+        if (!allowedTypes.includes(file.type)) {
+            showAlert.warning('Only images and PDFs are allowed', 'Invalid File Type');
             return;
         }
 
+        const isImage = file.type.startsWith('image/');
+        const isPdf = file.type === 'application/pdf';
+        
         setUploading(true);
         
         // Immediate preview using local blob URL
@@ -263,8 +345,8 @@ export const ShopChatInterface: React.FC = () => {
             // Update with real server URL
             setPendingAttachment(prev => prev ? { ...prev, url: data.url } : null);
         } catch (error) {
-            console.error('Upload failed:', error);
-            alert('Failed to upload file');
+            console.error('Failed to upload file:', error);
+            showAlert.error('Failed to upload file. Please try again.');
             setPendingAttachment(null);
         } finally {
             setUploading(false);
@@ -277,17 +359,48 @@ export const ShopChatInterface: React.FC = () => {
     const handleSend = async () => {
         if ((!inputText.trim() && !pendingAttachment) || !selectedConvoId) return;
 
-        // Use the server URL (not blob) for attachment
-        const attachmentUrl = pendingAttachment?.url?.startsWith('blob:') ? undefined : pendingAttachment?.url;
         const text = inputText.trim();
+        const tempId = Date.now();
+        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        // Use the server URL (not blob) for attachment if it exists
+        const currentAttachment = pendingAttachment;
+        const attachmentUrl = currentAttachment?.url?.startsWith('blob:') ? undefined : currentAttachment?.url;
+
+        // Optimistic Update
+        const optimisticMsg: Message = {
+            id: tempId,
+            senderId: myUserId,
+            text: text,
+            time: time,
+            isMine: true,
+            attachmentUrl: currentAttachment?.url, // Use blob for immediate display
+            attachmentType: currentAttachment?.type
+        };
+
+        setMessages(prev => [...prev, optimisticMsg]);
+        setInputText('');
+        setPendingAttachment(null);
+
+        // Update sidebar optimistically
+        setConversations(prev => prev.map(c => {
+            if (c.id === selectedConvoId) {
+                return {
+                    ...c,
+                    lastMessageAt: new Date().toISOString(),
+                    messages: [{ message: text, createdAt: new Date().toISOString(), isRead: true }]
+                };
+            }
+            return c;
+        }));
 
         try {
             await api.post(`/conversations/${selectedConvoId}/messages`, { text, attachmentUrl });
-            setInputText('');
-            setPendingAttachment(null);
-            // Socket will handle the update
         } catch (err) {
             console.error("Failed to reply", err);
+            // On error, we could remove the optimistic message
+            setMessages(prev => prev.filter(m => m.id !== tempId));
+            showAlert.error("Failed to send message. Please try again.");
         }
     };
     return (
@@ -316,14 +429,21 @@ export const ShopChatInterface: React.FC = () => {
                     conversations.map(convo => (
                         <div 
                           key={convo.id} 
-                          onClick={() => setSelectedConvoId(convo.id)}
+                          onClick={() => handleSelectConversation(convo.id)}
                           className={`p-4 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors ${selectedConvoId === convo.id ? 'bg-primary/5 border-l-4 border-l-primary' : ''}`}
                         >
                             <div className="flex justify-between items-start mb-1">
                                 <h4 className="font-bold text-sm text-slate-200">{convo.user.name}</h4>
-                                <span className="text-[10px] text-slate-500">{new Date(convo.lastMessageAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                <div className="flex flex-col items-end gap-1">
+                                    <span className="text-[10px] text-slate-500">{new Date(convo.lastMessageAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                    {convo.unreadCount > 0 && (
+                                        <span className="w-5 h-5 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full">
+                                            {convo.unreadCount > 4 ? '4+' : convo.unreadCount}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
-                            <p className="text-xs text-slate-400 line-clamp-1">
+                            <p className={`text-xs line-clamp-1 ${convo.unreadCount > 0 ? 'text-white font-medium' : 'text-slate-400'}`}>
                                 {convo.messages[0]?.message || 'No messages'}
                             </p>
                         </div>

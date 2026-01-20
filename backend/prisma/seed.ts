@@ -34,6 +34,7 @@ async function main() {
       prisma.shopCertification.deleteMany(),
       prisma.shop.deleteMany(),
       prisma.service.deleteMany(),
+      prisma.diagnosticPackage.deleteMany(),
       prisma.user.deleteMany()
     ];
 
@@ -54,7 +55,14 @@ async function main() {
         description: 'Includes filter replacement, fluid top-off, and tire pressure check.',
         durationEst: 45,
         warranty: '3 months / 3,000 miles',
-        includes: ['Oil filter', 'Up to 5 quarts synthetic oil', 'Tire pressure check', 'Fluid top-off']
+        includes: ['Oil filter', 'Up to 5 quarts synthetic oil', 'Tire pressure check', 'Fluid top-off'],
+        tierPricing: {
+            [CarType.COMPACT]: { min: "50", max: "70" },
+            [CarType.SEDAN]: { min: "60", max: "80" },
+            [CarType.SUV]: { min: "80", max: "100" },
+            [CarType.LUXURY]: { min: "120", max: "150" },
+            [CarType.EV]: { min: "60", max: "80" },
+        }
       },
       {
         name: 'Brake Pad Replacement (Front)',
@@ -62,43 +70,80 @@ async function main() {
         description: 'Replacement of front brake pads and rotor inspection.',
         durationEst: 120,
         warranty: '12 months / 12,000 miles',
-        includes: ['Front brake pads', 'Rotor inspection', 'Brake fluid check', 'Road test']
+        includes: ['Front brake pads', 'Rotor inspection', 'Brake fluid check', 'Road test'],
+        tierPricing: {
+            [CarType.COMPACT]: { min: "150", max: "200" },
+            [CarType.SEDAN]: { min: "180", max: "240" },
+            [CarType.SUV]: { min: "220", max: "280" },
+            [CarType.LUXURY]: { min: "300", max: "450" },
+            [CarType.EV]: { min: "250", max: "350" },
+        }
       },
       {
         name: 'Comprehensive Diagnostic',
         category: ServiceCategory.DIAGNOSTIC,
         description: 'Full system scan, engine health check, and suspension analysis.',
         durationEst: 60,
-        includes: ['OBD-II scan', 'Engine health report', 'Suspension check', 'Battery test', 'Written report']
+        includes: ['OBD-II scan', 'Engine health report', 'Suspension check', 'Battery test', 'Written report'],
+        tierPricing: {
+            [CarType.COMPACT]: { min: "99", max: "99" },
+            [CarType.SEDAN]: { min: "99", max: "99" },
+            [CarType.SUV]: { min: "120", max: "120" },
+            [CarType.LUXURY]: { min: "150", max: "150" },
+            [CarType.EV]: { min: "150", max: "150" },
+        }
+      },
+      {
+        name: 'Tire Rotation & Balance',
+        category: ServiceCategory.MAINTENANCE,
+        description: 'Rotate all four tires and balance for even wear.',
+        durationEst: 30,
+        warranty: '30 days',
+        includes: ['Tire rotation', 'Wheel balancing', 'Tread depth check'],
+        tierPricing: {
+            [CarType.COMPACT]: { min: "40", max: "60" },
+            [CarType.SEDAN]: { min: "45", max: "65" },
+            [CarType.SUV]: { min: "55", max: "75" },
+            [CarType.LUXURY]: { min: "70", max: "90" },
+            [CarType.EV]: { min: "60", max: "80" },
+        }
+      },
+      {
+        name: 'AC System Recharge',
+        category: ServiceCategory.REPAIR,
+        description: 'Evacuate and recharge AC refrigerant for optimal cooling.',
+        durationEst: 90,
+        warranty: '6 months',
+        includes: ['Refrigerant evacuation', 'Leak test', 'Refrigerant recharge', 'System test'],
+        tierPricing: {
+            [CarType.COMPACT]: { min: "120", max: "180" },
+            [CarType.SEDAN]: { min: "140", max: "200" },
+            [CarType.SUV]: { min: "160", max: "220" },
+            [CarType.LUXURY]: { min: "200", max: "280" },
+            [CarType.EV]: { min: "180", max: "260" },
+        }
       }
     ];
 
     const createdServices = [];
     for (const s of services) {
-      const service = await prisma.service.create({ data: s });
+      const { tierPricing, ...serviceData } = s;
+      const service = await prisma.service.create({ data: serviceData });
       createdServices.push(service);
 
-      // Create base pricing mapping
-      const pricingData = [
-        { vehicleType: CarType.COMPACT, min: "50", max: "70" },
-        { vehicleType: CarType.SEDAN, min: "60", max: "80" },
-        { vehicleType: CarType.SUV, min: "80", max: "100" },
-        { vehicleType: CarType.LUXURY, min: "120", max: "150" },
-        { vehicleType: CarType.EV, min: "100", max: "130" },
-      ];
-
-      for (const p of pricingData) {
+      // Create pricing mapping
+      for (const [type, range] of Object.entries(tierPricing)) {
         await prisma.servicePricing.create({
           data: {
             serviceId: service.id,
-            vehicleType: p.vehicleType,
-            minPrice: p.min,
-            maxPrice: p.max
+            vehicleType: type as CarType,
+            minPrice: range.min,
+            maxPrice: range.max
           }
         });
       }
     }
-    console.log(`✅ Created ${createdServices.length} services with pricing`);
+    console.log(`✅ Created ${createdServices.length} services with specific pricing`);
 
     // 4. Create Users
     console.log('👤 Creating users...');
@@ -122,8 +167,8 @@ async function main() {
     // 5. Create Shops
     console.log('🏪 Creating shops...');
     const shopsData = [
-      { userId: createdUsers[1].id, name: 'Speedy Fix Auto', rating: "4.8", reviewCount: 124, verified: true, address: '123 Main St, Springfield', laborRate: "85" },
-      { userId: createdUsers[2].id, name: 'Prestige Motors', rating: "4.9", reviewCount: 89, verified: true, address: '450 Highland Ave, Springfield', laborRate: "120" },
+      { userId: createdUsers[1].id, name: 'Speedy Fix Auto', rating: 0, reviewCount: 0, verified: true, address: '123 Main St, Springfield', laborRate: "85" },
+      { userId: createdUsers[2].id, name: 'Prestige Motors', rating: 0, reviewCount: 0, verified: true, address: '450 Highland Ave, Springfield', laborRate: "120" },
     ];
 
     const createdShops = [];
@@ -133,11 +178,20 @@ async function main() {
 
       // Shop Services
       for (const service of createdServices) {
+        let price = "149.00";
+        // Assign realistic base prices for the shops
+        if (service.name.includes('Oil')) price = "59.99";
+        else if (service.name.includes('Brake')) price = "189.00";
+        else if (service.name.includes('Tire')) price = "49.99";
+        else if (service.name.includes('AC')) price = "149.99";
+        else if (service.name.includes('Diagnostic')) price = "89.00";
+
         await prisma.shopService.create({
           data: {
             shopId: shop.id,
             serviceId: service.id,
-            customPrice: service.name.includes('Oil') ? "59.99" : "189.00"
+            customPrice: price,
+            isAvailable: true
           }
         });
       }
@@ -206,6 +260,80 @@ async function main() {
       }
     });
     console.log('✅ Created reviews');
+    
+    // 9. Create Forum Posts
+    console.log('💬 Creating forum posts...');
+    const forumPosts = [
+        {
+            userId: createdUsers[0].id, // Alex
+            title: 'Best tires for rainy weather?',
+            content: 'I live in an area with heavy raid. Any recommendations for tires that have good grip? Considering Michelin or Bridgestone.',
+            tags: ['Tires', 'Advice'],
+            category: 'QUESTION' as any,
+            viewCount: 45,
+            likeCount: 2,
+            commentCount: 1,
+            images: [],
+            video: null,
+            isEdited: false
+        },
+        {
+            userId: createdUsers[1].id, // Mike (Shop)
+            title: 'Maintenance Tip: Check your oil regularly',
+            content: 'Regular oil checks can extend your engine life significantly. We recommend checking every 1,000 miles or before long trips.',
+            tags: ['Maintenance', 'OilChange', 'Tips'],
+            category: 'TIP' as any,
+            viewCount: 120,
+            likeCount: 15,
+            commentCount: 0,
+            images: ["https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&w=800&q=80"],
+            video: null,
+            isEdited: false
+        }
+    ];
+
+    for (const p of forumPosts) {
+        await prisma.forumPost.create({ data: p });
+    }
+    console.log(`✅ Created ${forumPosts.length} forum posts`);
+
+    // 10. Create Diagnostic Packages
+    console.log('🔍 Creating diagnostic packages...');
+    const diagnosticPackages = [
+      {
+        name: 'Basic Check-Up',
+        description: 'Quick visual inspection and code scan for common issues.',
+        price: "49.00",
+        duration: '30 mins',
+        includes: ['OBD-II code scan', 'Visual inspection', 'Verbal report']
+      },
+      {
+        name: 'Full Diagnostic',
+        description: 'Comprehensive analysis of all major systems.',
+        price: "99.00",
+        duration: '1 hour',
+        includes: ['OBD-II scan', 'Engine analysis', 'Brake inspection', 'Suspension check', 'Written report']
+      },
+      {
+        name: 'Pre-Purchase Inspection',
+        description: 'Complete vehicle assessment before buying a used car.',
+        price: "149.00",
+        duration: '2 hours',
+        includes: ['Full diagnostic', 'Road test', 'Undercarriage inspection', 'History review', 'Detailed report with photos']
+      },
+      {
+        name: 'Performance Analysis',
+        description: 'For enthusiasts wanting to optimize their vehicle.',
+        price: "199.00",
+        duration: '2.5 hours',
+        includes: ['Dyno test', 'Compression test', 'Fuel system analysis', 'Tune recommendations']
+      }
+    ];
+
+    for (const pkg of diagnosticPackages) {
+      await prisma.diagnosticPackage.create({ data: pkg });
+    }
+    console.log(`✅ Created ${diagnosticPackages.length} diagnostic packages`);
 
     console.log('🏁 Seeding finished successfully!');
   } catch (error) {

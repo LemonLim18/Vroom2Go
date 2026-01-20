@@ -25,19 +25,19 @@ import { ShopProfileSettings } from './views/ShopProfileSettings';
 import ResetPasswordView from './views/ResetPasswordView';
 import { UserQuotesView } from './views/UserQuotesView';
 import { MyBookingsView } from './views/MyBookingsView';
-import { MOCK_SERVICES, MOCK_BOOKINGS, MOCK_QUOTES } from './constants';
+import { MOCK_SERVICES, MOCK_BOOKINGS, MOCK_QUOTES, getShopById } from './constants';
 
 // Placeholder view for Service Details
-const ServiceDetails: React.FC<{service: Service, onBack: () => void, onCompare: () => void, onRequestQuote: () => void}> = ({ service, onBack, onCompare, onRequestQuote }) => (
+const ServiceDetails: React.FC<{service: Service, onBack: () => void, onCompare: () => void, onRequestQuote: () => void}> = ({ service, onBack, onCompare }) => (
   <div className="animate-fade-in">
-    <button onClick={onBack} className="btn btn-ghost mb-4">← Back</button>
+    <button onClick={onBack} className="btn btn-ghost mb-4">← Back to Services</button>
     <div className="card bg-base-100 shadow-xl border border-base-200">
       <div className="card-body">
         <h2 className="card-title text-3xl">{service.name}</h2>
         <div className="badge badge-lg badge-secondary">{service.category}</div>
         <p className="mt-4 text-lg">{service.description}</p>
         
-        <div className="divider">Pricing Breakdown</div>
+        <div className="divider">Estimated Price Range by Vehicle Type</div>
         <div className="overflow-x-auto">
           <table className="table table-zebra w-full">
             <thead>
@@ -57,9 +57,16 @@ const ServiceDetails: React.FC<{service: Service, onBack: () => void, onCompare:
           </table>
         </div>
         
-        <div className="card-actions justify-end mt-8 gap-2">
-          <button className="btn btn-outline" onClick={onCompare}>Compare Shops</button>
-          <button className="btn btn-primary btn-lg" onClick={onRequestQuote}>Request Quote</button>
+        <div className="alert alert-info mt-6">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <span>Prices vary by shop. Compare shops below to see their specific rates and book directly.</span>
+        </div>
+        
+        <div className="card-actions justify-center mt-8">
+          <button className="btn btn-primary btn-lg gap-2" onClick={onCompare}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            Find Shops Offering This Service
+          </button>
         </div>
       </div>
     </div>
@@ -120,6 +127,7 @@ const App: React.FC = () => {
   const [isBooking, setIsBooking] = useState(false);
   const [bookingServiceId, setBookingServiceId] = useState<string | undefined>(undefined);
   const [activeChatShop, setActiveChatShop] = useState<Shop | null>(null);
+  const [navigationData, setNavigationData] = useState<any>(null);
 
   // Helper to map backend role to frontend role (backend uses OWNER, frontend uses DRIVER)
   const mapBackendRole = (backendRole: string): UserRole => {
@@ -230,6 +238,7 @@ const App: React.FC = () => {
         />
       );
     }
+    // Booking Flow Overlay (Fixed Import)
 
     // Booking Flow Overlay
     if (isBooking && selectedShop) {
@@ -237,11 +246,18 @@ const App: React.FC = () => {
         <BookingView 
           shop={selectedShop} 
           initialServiceId={bookingServiceId}
+          quote={selectedQuote || undefined} // Pass the quote context
           onConfirm={() => {
              setIsBooking(false);
+             setSelectedQuote(null); // Clear quote context after success
              handleNavigate('bookings');
           }}
-          onCancel={() => setIsBooking(false)}
+          onCancel={() => {
+            setIsBooking(false);
+            // Don't clear selectedQuote on cancel, allows going back to Quote Detail if desired.
+            // But since BookingView is 'above' QuoteDetailView, hiding it reveals QuoteDetailView again?
+            // Yes, if selectedQuote is still set.
+          }}
         />
       );
     }
@@ -253,8 +269,14 @@ const App: React.FC = () => {
           quote={selectedQuote}
           onBack={() => setSelectedQuote(null)}
           onAccept={(quote) => {
-            setSelectedQuote(null);
-            handleNavigate('bookings');
+            // Transition to Booking View with this quote
+            const shop = getShopById(quote.shopId);
+            if (shop) {
+              setSelectedShop(shop);
+              setIsBooking(true);
+            } else {
+              console.error('Shop not found for quote', quote.id);
+            }
           }}
           onReject={() => setSelectedQuote(null)}
           onCompare={() => {
@@ -284,9 +306,7 @@ const App: React.FC = () => {
           shop={selectedShop} 
           onBack={() => setSelectedShop(null)} 
           onBook={(shop, serviceId) => {
-            setSelectedShop(shop);
-            setBookingServiceId(serviceId);
-            setIsBooking(true);
+            handleNavigate('booking', { shop, serviceId });
           }}
           onMessage={(shop) => setActiveChatShop(shop)}
         />
@@ -300,12 +320,10 @@ const App: React.FC = () => {
           service={selectedService} 
           onBack={() => setSelectedService(null)}
           onCompare={() => {
-            setSelectedService(null);
-            handleNavigate('compare');
+            handleNavigate('compare', { serviceId: selectedService.id });
           }}
           onRequestQuote={() => {
-            setSelectedService(null);
-            handleNavigate('quote-request');
+            handleNavigate('quote-request', { serviceId: selectedService.id });
           }}
         />
       );
@@ -376,8 +394,7 @@ const App: React.FC = () => {
           <VehicleProfileView 
             onBack={() => handleNavigate('home')}
             onVehicleSelect={(v) => {
-              setSelectedVehicle(v);
-              handleNavigate('quote-request');
+              handleNavigate('quote-request', { vehicle: v });
             }}
           />
         );
@@ -385,7 +402,11 @@ const App: React.FC = () => {
       case 'compare':
         return (
           <CompareShopsView 
-            onBack={() => handleNavigate('home')}
+            serviceId={navigationData?.serviceId || selectedService?.id}
+            onBack={() => {
+                setSelectedService(null);
+                handleNavigate('home');
+            }}
             onSelectShop={(shop) => setSelectedShop(shop)}
             onRequestQuote={(shop) => {
               setSelectedShop(shop);
@@ -394,15 +415,27 @@ const App: React.FC = () => {
           />
         );
       
+      case 'reset-password':
+        return <ResetPasswordView onNavigate={handleNavigate} />;
+      
       case 'quote-request':
         return (
           <QuoteRequestView 
-            preSelectedVehicle={selectedVehicle || undefined}
-            onBack={() => handleNavigate('home')}
+            preSelectedVehicle={navigationData?.vehicle || selectedVehicle || undefined}
+            preSelectedShop={navigationData?.shop || selectedShop || undefined}
+            preSelectedServiceId={navigationData?.serviceId || selectedService?.id}
+            onBack={() => {
+                setSelectedService(null);
+                setSelectedShop(null);
+                handleNavigate('home');
+            }}
             onSubmit={(data) => {
               // After submitting, go to quotes view
+              setSelectedService(null);
+              setSelectedShop(null);
               handleNavigate('quotes');
             }}
+            onAddVehicle={() => handleNavigate('vehicles')}
           />
         );
       
@@ -429,8 +462,9 @@ const App: React.FC = () => {
       case 'messages':
         return (
           <MessagesView 
+            targetUserId={navigationData?.targetUserId}
             onSelectConversation={(shop) => {
-              setActiveChatShop(shop); // Reuse this state or create selectedChatShop
+              setActiveChatShop(shop); 
               handleNavigate('chat');
             }} 
           />
@@ -445,17 +479,32 @@ const App: React.FC = () => {
           />
         );
       
-      case 'reset-password':
-        return <ResetPasswordView />;
-      
       default:
         return <div className="p-10 text-center">Page Under Construction</div>;
     }
   };
 
-  const handleNavigate = (view: string) => {
-    clearSelections();
+  const handleNavigate = (view: string, data?: any) => {
+    // Clear selections when navigating to a new view to avoid "blocking" overlays
+    // Unless data suggests we are in a sub-flow (this is a simple heuristic)
+    if (!data || (!data.keepContext && view !== 'booking' && view !== 'quote-request' && view !== 'compare')) {
+        clearSelections();
+    }
+    
+    // Set specific states for sub-flows that use selections as "overlays" in renderContent
+    if (view === 'booking' && data?.shop) {
+        setSelectedShop(data.shop);
+        if (data.serviceId) setBookingServiceId(data.serviceId);
+        setIsBooking(true);
+    }
+    
     setCurrentView(view);
+    if (data) {
+        setNavigationData(data);
+    } else {
+        setNavigationData(null);
+    }
+    window.scrollTo(0, 0);
   };
 
   const handleRoleSwitch = (targetRole: UserRole) => {

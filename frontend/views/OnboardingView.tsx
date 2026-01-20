@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserRole } from '../types';
+import { showAlert } from '../utils/alerts';
 import { 
   Wrench, 
   Car, 
@@ -83,12 +84,16 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
       
+      showAlert.success('Welcome back to Vroom2 Go!', 'Login Successful');
+      
       setTimeout(() => {
         onComplete(mapBackendRole(userData.role));
       }, 800);
     } catch (err: any) {
       console.error('Login failed', err);
-      setErrorMsg(err.response?.data?.message || 'Invalid email or password');
+      const msg = err.response?.data?.message || 'Invalid email or password';
+      setErrorMsg(msg);
+      showAlert.error(msg, 'Login Failed');
       setIsLoading(false);
     }
   };
@@ -104,7 +109,10 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
       }
       await api.post('/auth/forgot-password', { email: loginData.email });
       setAuthMode('login');
-      alert('If an account exists, a reset link has been sent (CHECK SERVER CONSOLE).');
+      showAlert.info(
+        'If an account exists, a reset link has been sent. Please check your email.',
+        'Password Reset'
+      );
     } catch (err) {
       console.error('Reset failed', err);
       setErrorMsg('Failed to send reset link');
@@ -139,13 +147,17 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(userData));
 
+        showAlert.success('Account created successfully!', 'Welcome!');
+
         setTimeout(() => {
           onComplete(selectedRole);
           setIsLoading(false);
         }, 1500);
       } catch (error: any) {
         console.error('Registration failed:', error);
-        setErrorMsg(error.response?.data?.message || 'Registration failed');
+        const msg = error.response?.data?.message || 'Registration failed';
+        setErrorMsg(msg);
+        showAlert.error(msg, 'Account Creation Failed');
         setStep('details');
         setIsLoading(false);
       }
@@ -407,7 +419,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
           </button>
 
           <div className="flex items-center gap-3 mb-6">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isShop ? 'bg-primary/20' : 'bg-blue-500/20'}`}>
+            <div className={'w-12 h-12 rounded-xl flex items-center justify-center ' + (isShop ? 'bg-primary/20' : 'bg-blue-500/20')}>
               {isShop ? <Wrench className="w-6 h-6 text-primary" /> : <Car className="w-6 h-6 text-blue-400" />}
             </div>
             <div>
@@ -600,7 +612,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onSk
   return (
     <div 
       className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat fixed inset-0 z-50 overflow-y-auto"
-      style={{ backgroundImage: `url(${bgImage})` }}
+      style={{ backgroundImage: 'url(' + bgImage + ')' }}
     >
       {/* Dark Overlay */}
       <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[2px] z-0" />

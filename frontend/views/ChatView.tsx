@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Shop } from '../types';
 import { socket } from '../services/socket';
 import api from '../services/api';
-import { Send, ArrowLeft, Phone, Video, Paperclip, CheckCheck, MapPin, FileText, X, Loader2 } from 'lucide-react';
+import { Send, ArrowLeft, Phone, Video, Paperclip, CheckCheck, MapPin, FileText, X, Loader2, Download, Trash2, Edit2 } from 'lucide-react';
+import { showAlert } from '../utils/alerts';
 
 interface ChatViewProps {
   shop: Shop;
@@ -134,11 +135,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
     if (!file) return;
 
     // Validate file type
-    const isImage = file.type.startsWith('image/');
-    const isPdf = file.type === 'application/pdf';
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'];
     
-    if (!isImage && !isPdf) {
-      alert('Only images and PDFs are allowed');
+    if (!allowedTypes.includes(file.type)) {
+      showAlert.warning('Only images and PDFs are allowed', 'Invalid File Type');
       return;
     }
 
@@ -148,7 +148,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
     const localPreviewUrl = URL.createObjectURL(file);
     setPendingAttachment({
         url: localPreviewUrl, // Use local URL for preview
-        type: isImage ? 'image' : 'pdf',
+        type: file.type.startsWith('image/') ? 'image' : 'pdf',
         name: file.name
     });
 
@@ -163,8 +163,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
       // Update with real server URL
       setPendingAttachment(prev => prev ? { ...prev, url: data.url } : null);
     } catch (error) {
-      console.error('Upload failed:', error);
-      alert('Failed to upload file');
+      console.error('Failed to upload file:', error);
+      showAlert.error('Failed to upload file. Please try again.');
       setPendingAttachment(null);
     } finally {
       setUploading(false);

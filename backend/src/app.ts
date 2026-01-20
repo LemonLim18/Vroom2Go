@@ -15,12 +15,15 @@ import forumRoutes from './routes/forum.routes';
 import quoteRoutes from './routes/quote.routes';
 import uploadRoutes from './routes/upload.routes';
 import reviewRoutes from './routes/review.routes';
+import invoiceRoutes from './routes/invoice.routes';
+import notificationRoutes from './routes/notification.routes';
+import diagnosticPackageRoutes from './routes/diagnosticPackage.routes';
 
 const app: Application = express();
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000 // Increased for development - reduce in production
 });
 
 // Serve uploaded files statically BEFORE helmet to avoid CORP restrictions
@@ -66,6 +69,9 @@ app.use('/api/forum', forumRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/invoices', invoiceRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/diagnostic-packages', diagnosticPackageRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

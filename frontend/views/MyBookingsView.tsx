@@ -20,6 +20,7 @@ import {
   Camera,
   ImageIcon
 } from 'lucide-react';
+import { showAlert } from '../utils/alerts';
 
 type BookingTab = 'upcoming' | 'inProgress' | 'completed';
 
@@ -83,7 +84,15 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
     try {
       setLoading(true);
       const { data } = await api.get('/bookings');
-      setBookings(data);
+      
+      // Merge with locally saved mock bookings (for demo purposes)
+      const localMocks = JSON.parse(localStorage.getItem('vroom_mock_bookings') || '[]');
+      // Combine and sort by date descending
+      const allBookings = [...localMocks, ...data].sort((a: any, b: any) => 
+        new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime()
+      );
+
+      setBookings(allBookings);
     } catch (error) {
       console.error('Failed to fetch bookings:', error);
     } finally {
@@ -132,17 +141,18 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
   };
 
   const handleCancelBooking = async (bookingId: number) => {
-    if (!confirm('Are you sure you want to cancel this booking?')) return;
+    const confirmed = await showAlert.confirm('Are you sure you want to cancel this booking?');
+    if (!confirmed) return;
     
     setCancellingId(bookingId);
     try {
       await api.put(`/bookings/${bookingId}/status`, { status: 'CANCELLED' });
-      showToast('Booking cancelled successfully');
+      showAlert.success('Booking cancelled successfully');
       fetchBookings();
       setSelectedBooking(null);
     } catch (error) {
       console.error('Failed to cancel booking:', error);
-      showToast('Failed to cancel booking');
+      showAlert.error('Failed to cancel booking');
     } finally {
       setCancellingId(null);
     }
@@ -192,7 +202,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
       }
     } catch (error) {
       console.error('Failed to upload image:', error);
-      showToast('Failed to upload image');
+      showAlert.error('Failed to upload image');
     } finally {
       setUploadingImage(false);
     }
@@ -216,13 +226,13 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
       });
       
       setReviewedBookings(prev => new Set([...prev, reviewBooking.id]));
-      showToast('Review submitted successfully!');
+      showAlert.success('Review submitted successfully!');
       setShowReviewModal(false);
       setReviewBooking(null);
       setReviewImages([]);
     } catch (error: any) {
       console.error('Failed to submit review:', error);
-      showToast(error.response?.data?.message || 'Failed to submit review');
+      showAlert.error(error.response?.data?.message || 'Failed to submit review');
     } finally {
       setSubmittingReview(false);
     }

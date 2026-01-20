@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { notifyQuoteReceived, notifyQuoteRequest } from './notification.controller';
 
 const prisma = new PrismaClient() as any;
 
@@ -241,6 +242,13 @@ export const createQuote = async (req: any, res: Response) => {
         status: 'QUOTED'
       }
     });
+
+    // Notify the user that they received a quote
+    try {
+      notifyQuoteReceived(request.userId, shop.name || 'A shop', quote.id);
+    } catch (notifyErr) {
+      console.warn('Failed to send quote notification:', notifyErr);
+    }
 
     res.status(201).json(quote);
   } catch (error: any) {

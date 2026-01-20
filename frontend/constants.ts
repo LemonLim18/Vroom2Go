@@ -239,7 +239,7 @@ export const MOCK_SHOPS: Shop[] = [
     distance: '5.1 mi',
     address: '450 Highland Ave, Springfield',
     phone: '(555) 987-6543',
-    email: 'info@prestigemotors.com',
+    email: 'sarah@prestige.com',
     verified: true,
     verifiedAt: '2021-08-20',
     services: ['s1', 's2', 's3', 's4', 's5'],
@@ -381,6 +381,18 @@ export const MOCK_USERS: User[] = [
     phone: '(555) 000-0000',
     role: UserRole.ADMIN,
     createdAt: '2021-01-01T00:00:00Z'
+  },
+  {
+    id: 'user3',
+    name: 'Sarah Miller',
+    email: 'sarah@prestige.com',
+    phone: '(555) 987-6543',
+    role: UserRole.SHOP,
+    avatar: 'https://i.pravatar.cc/150?u=user3',
+    createdAt: '2022-08-20T10:00:00Z',
+    businessName: 'Prestige Motors',
+    businessAddress: '450 Highland Ave, Springfield',
+    verified: true
   }
 ];
 
@@ -470,7 +482,7 @@ export const MOCK_QUOTES: Quote[] = [
     confidence: 0.85,
     guaranteed: true,
     guaranteeValidDays: 7,
-    status: QuoteStatus.SUBMITTED,
+    status: QuoteStatus.QUOTED,
     notes: 'Rotors look good, no machining needed. Can complete today if approved.',
     createdAt: '2024-01-05T14:30:00Z',
     expiresAt: '2024-01-12T14:30:00Z'
@@ -513,7 +525,7 @@ export const MOCK_QUOTES: Quote[] = [
     confidence: 0.90,
     guaranteed: true,
     guaranteeValidDays: 14,
-    status: QuoteStatus.SUBMITTED,
+    status: QuoteStatus.QUOTED,
     notes: 'Using premium ceramic pads for longer life. Includes complimentary car wash.',
     createdAt: '2024-01-05T15:00:00Z',
     expiresAt: '2024-01-19T15:00:00Z'
@@ -545,7 +557,7 @@ export const MOCK_QUOTES: Quote[] = [
     estimatedRange: { min: 145, max: 180 },
     confidence: 0.75,
     guaranteed: false,
-    status: QuoteStatus.SUBMITTED,
+    status: QuoteStatus.QUOTED,
     notes: 'Best price in town! May need additional work if rotors are worn.',
     createdAt: '2024-01-05T16:00:00Z'
   }

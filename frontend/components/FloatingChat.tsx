@@ -7,17 +7,9 @@ import { socket } from '../services/socket';
 interface FloatingChatProps {
   onOpenChat: (shop: Shop) => void;
   onViewAll: () => void;
-}
-
-interface BackendConversation {
-    id: number;
-    lastMessageAt: string;
-    messages: { message: string, createdAt: string, isRead: boolean }[];
-    shop: Shop | null;
-    user1Id: number;
-    user2Id: number;
-    user1: { id: number, name: string, avatarUrl: string };
-    user2: { id: number, name: string, avatarUrl: string };
+  conversations: any[]; // Managed by parent
+  globalUnread: number;
+  userStatuses: Record<number, { isOnline: boolean, lastActive?: string }>;
 }
 
 interface ConversationDisplay {
@@ -27,13 +19,13 @@ interface ConversationDisplay {
   timestamp: string;
   unread: number;
   online: boolean;
+  lastActive?: string;
 }
 
-export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAll }) => {
+export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAll, conversations, globalUnread, userStatuses }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [conversations, setConversations] = useState<ConversationDisplay[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [formattedConversations, setFormattedConversations] = useState<ConversationDisplay[]>([]);
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Helper to format time
@@ -46,69 +38,63 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAl
       return date.toLocaleDateString();
   }
 
-  const fetchConversations = async () => {
-      try {
-          const { data } = await api.get('/conversations');
-          const userId = JSON.parse(localStorage.getItem('user') || '{}').id;
-
-          const formatted: ConversationDisplay[] = data.map((c: BackendConversation) => {
-              let shopData: Shop | any = {};
-
-              if (c.shop) {
-                   const otherUser = c.user1Id === userId ? c.user2 : c.user1;
-                   // If I am the shop owner, show the customer's info
-                   // If I am the customer, show the shop's info
-                   const isMyShop = c.shop.userId === userId;
-                   
-                   shopData = {
-                       id: c.shop.id,
-                       name: isMyShop ? otherUser.name : c.shop.name,
-                       imageUrl: isMyShop ? otherUser.avatarUrl : c.shop.imageUrl,
-                       userId: otherUser.id,
-                       rating: 5,
-                       reviewCount: 0,
-                       address: isMyShop ? 'Customer' : 'Online',
-                       verified: isMyShop ? false : true
-                   };
-              } else {
-                  const otherUser = c.user1Id === userId ? c.user2 : c.user1;
-                  shopData = {
-                      id: 0,
-                      userId: otherUser.id,
-                      name: otherUser.name,
-                      imageUrl: otherUser.avatarUrl,
-                       rating: 5,
-                       reviewCount: 0,
-                       address: 'Private Message',
-                       verified: false
-                  };
-              }
-
-              const lastMsg = c.messages[0];
-
-              return {
-                  id: c.id,
-                  shop: shopData,
-                  lastMessage: lastMsg ? lastMsg.message : 'Start of conversation',
-                  timestamp: c.lastMessageAt ? formatTime(c.lastMessageAt) : '',
-                  unread: 0, // TODO: calculate unread
-                  online: false // TODO: socket presence
-              };
-          });
-          
-          setConversations(formatted);
-          setLoading(false);
-      } catch (err) {
-          console.error("Failed to fetch conversations", err);
-          setLoading(false);
-      }
-  };
-
+  // Transform incoming conversations prop to display format
   useEffect(() => {
-      if (isOpen) {
-          fetchConversations();
-      }
-  }, [isOpen]);
+      const userId = JSON.parse(localStorage.getItem('user') || '{}').id;
+      
+      const formatted: ConversationDisplay[] = conversations.map((c: any) => {
+          let shopData: Shop | any = {};
+          let otherUserId = 0;
+
+          if (c.shop) {
+               const otherUser = c.user1Id === userId ? c.user2 : c.user1;
+               const isMyShop = c.shop.userId === userId;
+               
+               shopData = {
+                   id: c.shop.id,
+                   name: isMyShop ? (otherUser?.name || 'Unknown User') : c.shop.name,
+                   imageUrl: isMyShop ? otherUser?.avatarUrl : c.shop.imageUrl,
+                   userId: otherUser?.id,
+                   rating: 5,
+                   reviewCount: 0,
+                   address: isMyShop ? 'Customer' : 'Online',
+                   verified: isMyShop ? false : true
+               };
+               otherUserId = otherUser?.id;
+          } else {
+              const otherUser = c.user1Id === userId ? c.user2 : c.user1;
+              shopData = {
+                  id: 0,
+                  userId: otherUser?.id,
+                  name: otherUser?.name || 'Unknown User',
+                  imageUrl: otherUser?.avatarUrl,
+                   rating: 5,
+                   reviewCount: 0,
+                   address: 'Private Message',
+                   verified: false
+              };
+              otherUserId = otherUser?.id;
+          }
+
+          const lastMsg = c.messages[0];
+          const unreadCount = c._count?.messages || 0;
+          
+          // Determine status from prop
+          const status = userStatuses[otherUserId];
+
+          return {
+              id: c.id,
+              shop: shopData,
+              lastMessage: lastMsg ? lastMsg.message : 'Start of conversation',
+              timestamp: c.lastMessageAt ? formatTime(c.lastMessageAt) : '',
+              unread: unreadCount,
+              online: status?.isOnline || false,
+              lastActive: status?.lastActive
+          };
+      });
+      
+      setFormattedConversations(formatted);
+  }, [conversations, userStatuses]);
 
   // Click outside handler
   useEffect(() => {
@@ -126,9 +112,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAl
     };
   }, [isOpen]);
 
-  const totalUnread = conversations.reduce((sum, c) => sum + c.unread, 0);
-
-  const filteredConversations = conversations.filter(conv =>
+  const filteredConversations = formattedConversations.filter(conv =>
     conv.shop.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -146,9 +130,9 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAl
         className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-2xl transition-all duration-300 flex items-center justify-center bg-primary hover:bg-primary-focus hover:scale-110 shadow-primary/30"
       >
         <MessageCircle className="w-6 h-6 text-black" />
-        {totalUnread > 0 && (
+        {(globalUnread ?? 0) > 0 && (
           <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs font-bold flex items-center justify-center animate-pulse">
-            {totalUnread}
+            {globalUnread > 4 ? '4+' : globalUnread}
           </span>
         )}
       </button>
@@ -172,8 +156,8 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAl
                 </p>
               </div>
             </div>
-            {totalUnread > 0 && (
-              <span className="badge badge-primary badge-sm">{totalUnread}</span>
+            {globalUnread > 0 && (
+              <span className="badge badge-primary badge-sm">{globalUnread}</span>
             )}
             {/* Removed ChevronDown/Minimize Button */}
           </div>
@@ -194,10 +178,8 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAl
 
           {/* Conversations List */}
           <div className="flex-1 overflow-y-auto min-h-0">
-            {loading ? (
-                <div className="p-8 text-center text-slate-500">Loading chats...</div>
-            ) : filteredConversations.length === 0 ? (
-              <div className="text-center py-8 px-4">
+             {filteredConversations.length === 0 ? (
+                <div className="text-center py-8 px-4">
                 <MessageCircle className="w-10 h-10 text-slate-600 mx-auto mb-3" />
                 <p className="text-slate-400 text-sm">No conversations found</p>
               </div>

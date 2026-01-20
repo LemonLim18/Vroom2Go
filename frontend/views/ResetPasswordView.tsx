@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Lock, CheckCircle, AlertCircle, Eye, EyeOff, Wrench } from 'lucide-react';
 import api from '../services/api';
+import { showAlert } from '../utils/alerts';
 
-const ResetPasswordView: React.FC = () => {
-    const [searchParams] = useSearchParams();
-    const navigate = useNavigate();
-    const token = searchParams.get('token');
+interface ResetPasswordViewProps {
+    onNavigate: (view: string) => void;
+}
+
+const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({ onNavigate }) => {
+    // Parse token from URL manually since we aren't using react-router
+    const queryParams = new URLSearchParams(window.location.search);
+    const token = queryParams.get('token');
 
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
-    const [success, setSuccess] = useState(false);
 
     useEffect(() => {
         if (!token) {
@@ -26,12 +29,16 @@ const ResetPasswordView: React.FC = () => {
         setErrorMsg('');
 
         if (password !== confirmPassword) {
-            setErrorMsg('Passwords do not match');
+            const msg = 'Passwords do not match';
+            setErrorMsg(msg);
+            showAlert.error(msg);
             return;
         }
 
         if (password.length < 6) {
-            setErrorMsg('Password must be at least 6 characters');
+            const msg = 'Password must be at least 6 characters';
+            setErrorMsg(msg);
+            showAlert.error(msg);
             return;
         }
 
@@ -39,33 +46,19 @@ const ResetPasswordView: React.FC = () => {
 
         try {
             await api.post(`/auth/reset-password/${token}`, { password });
-            setSuccess(true);
+            showAlert.success('Your password has been reset successfully.', 'Success');
             setTimeout(() => {
-                // Clear token/params and go to home (which redirects to login/onboarding)
-                navigate('/');
-            }, 3000);
+                onNavigate('home');
+            }, 2000);
         } catch (err: any) {
             console.error('Reset failed', err);
-            setErrorMsg(err.response?.data?.message || 'Failed to reset password. Link may be expired.');
+            const msg = err.response?.data?.message || 'Failed to reset password. Link may be expired.';
+            setErrorMsg(msg);
+            showAlert.error(msg);
         } finally {
             setIsLoading(false);
         }
     };
-
-    if (success) {
-        return (
-            <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-                <div className="max-w-md w-full glass-card p-8 rounded-3xl border border-white/10 text-center animate-in fade-in zoom-in duration-500">
-                    <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <CheckCircle className="w-10 h-10 text-green-400" />
-                    </div>
-                    <h2 className="text-2xl font-black uppercase italic mb-2">Password Reset!</h2>
-                    <p className="text-slate-400 mb-6">Your password has been successfully updated. Redirecting to login...</p>
-                    <div className="loading loading-dots loading-lg text-primary"></div>
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">

@@ -29,10 +29,18 @@ export const getShops = async (req: Request, res: Response) => {
       where.rating = { gte: parseFloat(String(minRating)) };
     }
 
-    const shops = await prisma.shop.findMany({
+    const shopsRaw = await prisma.shop.findMany({
       where,
       include: {
         hours: true,
+        services: {
+          include: {
+            service: true
+          }
+        },
+        reviews: {
+          select: { rating: true }
+        },
         _count: {
           select: { reviews: true }
         }
@@ -40,6 +48,20 @@ export const getShops = async (req: Request, res: Response) => {
       orderBy: {
         rating: 'desc'
       }
+    });
+
+    // Calculate real dynamic rating if the column might be stale
+    const shops = shopsRaw.map(shop => {
+      const reviewCount = shop._count.reviews;
+      const avgRating = reviewCount > 0 
+        ? shop.reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount 
+        : 0;
+      
+      return {
+        ...shop,
+        rating: avgRating || Number(shop.rating), // Fallback to column if no reviews yet (for seeded ones maybe)
+        reviewCount: reviewCount
+      };
     });
 
     res.json(shops);
@@ -199,13 +221,67 @@ export const getShopAnalytics = async (req: any, res: Response) => {
     // Full implementation would track response timestamps separately
     let avgResponseMinutes = 18; // Placeholder default, can be enhanced later
 
+    // --- Charts Data Aggregation ---
+
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    // 1. Monthly Revenue & Bookings (Last 6 Months)
+    const monthlyStatsRaw = await prisma.$queryRaw`
+      SELECT 
+        DATE_FORMAT(b.created_at, '%Y-%m') as monthKey,
+        COUNT(b.id) as bookings,
+        COALESCE(SUM(p.amount), 0) as revenue
+      FROM bookings b
+      LEFT JOIN payments p ON b.id = p.booking_id AND p.status = 'COMPLETED'
+      WHERE b.shop_id = ${shop.id} 
+        AND b.created_at >= ${sixMonthsAgo}
+      GROUP BY monthKey
+      ORDER BY monthKey ASC
+    `;
+
+    // format for frontend: { name: 'Jan', revenue: 5000, bookings: 120 }
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const chartsData = (monthlyStatsRaw as any[]).map((stat: any) => {
+      const [year, month] = stat.monthKey.split('-');
+      return {
+        name: monthNames[parseInt(month) - 1],
+        revenue: Number(stat.revenue),
+        bookings: Number(stat.bookings)
+      };
+    });
+
+    // 2. Service Category Breakdown
+    const serviceStatsRaw = await prisma.$queryRaw`
+      SELECT 
+        s.category as name,
+        COUNT(b.id) as value
+      FROM bookings b
+      JOIN services s ON b.service_id = s.id
+      WHERE b.shop_id = ${shop.id}
+      GROUP BY s.category
+    `;
+    
+    // format for frontend: { name: 'Maintenance', value: 45 }
+    const serviceBreakdown = (serviceStatsRaw as any[]).map((stat: any) => ({
+      name: stat.name,
+      value: Number(stat.value)
+    }));
+    
+    // Fill in missing categories with 0 if needed, or just return what we have
+
     res.json({
       weeklyRevenue,
       newBookings: newBookingsCount,
       pendingBookings: pendingBookingsCount,
       avgResponseMinutes,
       rating: Number(shop.rating),
-      reviewCount: shop.reviewCount
+      reviewCount: shop.reviewCount,
+      charts: {
+        revenue: chartsData,
+        monthly: chartsData, 
+        services: serviceBreakdown
+      }
     });
   } catch (error: any) {
     console.error('Get shop analytics error:', error);

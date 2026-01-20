@@ -17,8 +17,10 @@ import {
   Palette,
   FileText,
   X,
-  Save
+  Save,
+  MapPin
 } from 'lucide-react';
+import { showAlert } from '../utils/alerts';
 
 interface VehicleProfileViewProps {
   onBack?: () => void;
@@ -61,6 +63,11 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+  // History State
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [vehicleHistory, setVehicleHistory] = useState<any[]>([]); 
+  const [viewingHistoryParams, setViewingHistoryParams] = useState<{vehicle: Vehicle} | null>(null);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -91,6 +98,27 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchHistory = async (vehicleId: string) => {
+    try {
+        // Reuse the bookings endpoint - simplified for frontend filtering
+        const { data } = await api.get('/bookings');
+        const history = data.filter((b: any) => 
+            String(b.vehicleId) === vehicleId && 
+            (b.status === 'COMPLETED')
+        ).sort((a: any, b: any) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime());
+        setVehicleHistory(history);
+    } catch (error) {
+        console.error('Failed to fetch history', error);
+        setVehicleHistory([]);
+    }
+  };
+
+  const handleViewHistory = async (vehicle: Vehicle) => {
+      setViewingHistoryParams({ vehicle });
+      await fetchHistory(vehicle.id);
+      setShowHistoryModal(true);
   };
 
   const handleVINDecode = () => {
@@ -137,6 +165,8 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       
+      showAlert.success('Vehicle added successfully!');
+      
       // Refresh list to get new vehicle with server-generated image URL
       fetchVehicles();
       
@@ -145,11 +175,11 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
     } catch (err: any) {
       console.error('Add vehicle failed', err);
       // Show backend error message if available
-      // Show backend error message if available
       const msg = err.response?.data?.message ? 
           `${err.response.data.message} ${err.response.data.details ? JSON.stringify(err.response.data.details) : ''}` 
           : 'Failed to add vehicle. Please try again.';
       setFormError(msg);
+      showAlert.error(msg);
     }
   };
 
@@ -173,6 +203,8 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
             headers: { 'Content-Type': 'multipart/form-data' }
         });
         
+        showAlert.success('Vehicle updated successfully!');
+        
         fetchVehicles(); // Refresh to ensure image update is reflected
         
         setShowEditModal(false);
@@ -181,17 +213,21 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
         console.error('Update failed', err);
         const msg = err.response?.data?.message || 'Failed to update vehicle.';
         setFormError(msg);
+        showAlert.error(msg);
     }
   };
 
   const handleDeleteVehicle = async (id: string) => {
-    if (!window.confirm('Are you sure you want to remove this vehicle?')) return;
+    const confirmed = await showAlert.confirm('Are you sure you want to remove this vehicle?');
+    if (!confirmed) return;
     try {
       await api.delete(`/vehicles/${id}`);
       setVehicles(prev => prev.filter(v => v.id !== id));
       if (selectedVehicle?.id === id) setSelectedVehicle(null);
-    } catch (err) {
+      showAlert.success('Vehicle removed');
+    } catch (err: any) {
       console.error('Delete failed', err);
+      showAlert.error('Failed to delete vehicle');
     }
   };
 
@@ -361,6 +397,8 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
     </>
   );
 
+  // ... (existing renderFormFields)
+
   return (
     <div className="animate-in fade-in duration-500">
       {/* Header */}
@@ -407,10 +445,10 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
                   ? 'border-primary shadow-[0_0_20px_rgba(250,204,21,0.2)]' 
                   : 'border-white/5 hover:border-white/10'
               }`}
+              onClick={() => setSelectedVehicle(vehicle)}
             >
               <div 
                 className="h-40 relative overflow-hidden bg-slate-800"
-                onClick={() => setSelectedVehicle(vehicle)}
               >
                 <img 
                   src={vehicle.image} 
@@ -454,42 +492,134 @@ export const VehicleProfileView: React.FC<VehicleProfileViewProps> = ({ onBack, 
                   )}
                 </div>
 
-                <div className="flex gap-2 mt-5">
-                  <button 
-                    className="btn btn-sm btn-ghost flex-1 gap-1"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openEditModal(vehicle);
-                    }}
-                  >
-                    <Edit3 className="w-4 h-4" /> Edit
-                  </button>
-                  <button 
-                    className="btn btn-sm btn-ghost text-error gap-1"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteVehicle(vehicle.id);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  {onVehicleSelect && (
+                <div className="flex flex-col gap-2 mt-5">
                     <button 
-                      className="btn btn-sm btn-primary gap-1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Call the prop function
-                        onVehicleSelect(vehicle);
-                      }}
+                        className="btn btn-sm btn-outline w-full gap-2 border-white/10 hover:border-primary hover:text-primary"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewHistory(vehicle);
+                        }}
                     >
-                      Select <ChevronRight className="w-4 h-4" />
+                        <FileText className="w-4 h-4" /> Service History
                     </button>
-                  )}
+                    
+                    <div className="flex gap-2">
+                        <button 
+                            className="btn btn-sm btn-ghost flex-1 gap-1"
+                            onClick={(e) => {
+                            e.stopPropagation();
+                            openEditModal(vehicle);
+                            }}
+                        >
+                            <Edit3 className="w-4 h-4" /> Edit
+                        </button>
+                        <button 
+                            className="btn btn-sm btn-ghost text-error gap-1"
+                            onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteVehicle(vehicle.id);
+                            }}
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                        {onVehicleSelect && (
+                            <button 
+                            className="btn btn-sm btn-primary gap-1"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onVehicleSelect(vehicle);
+                            }}
+                            >
+                            Select <ChevronRight className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
                 </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {/* Service History Modal */}
+      {showHistoryModal && viewingHistoryParams && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 rounded-3xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col border border-white/10 animate-in zoom-in-95">
+                  {/* Header */}
+                  <div className="p-6 border-b border-white/5 bg-slate-900 sticky top-0 flex justify-between items-center z-10">
+                      <div>
+                          <h2 className="text-2xl font-black uppercase italic flex items-center gap-2">
+                              Service <span className="text-primary">History</span>
+                          </h2>
+                          <p className="text-slate-400 text-sm">
+                              {viewingHistoryParams.vehicle.year} {viewingHistoryParams.vehicle.make} {viewingHistoryParams.vehicle.model}
+                          </p>
+                      </div>
+                      <button onClick={() => setShowHistoryModal(false)} className="btn btn-ghost btn-circle btn-sm">
+                          <X className="w-5 h-5" />
+                      </button>
+                  </div>
+
+                  {/* Timeline Content */}
+                  <div className="flex-1 overflow-y-auto p-6">
+                      {vehicleHistory.length === 0 ? (
+                          <div className="text-center py-12 text-slate-500">
+                              <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                              <p>No service records found for this vehicle.</p>
+                              <p className="text-xs mt-1">Completed bookings will appear here.</p>
+                          </div>
+                      ) : (
+                          <div className="relative border-l-2 border-white/10 ml-3 space-y-8 pl-8 py-2">
+                              {vehicleHistory.map((record) => (
+                                  <div key={record.id} className="relative">
+                                      {/* Timeline Dot */}
+                                      <div className="absolute -left-[39px] top-1 w-5 h-5 rounded-full bg-slate-900 border-4 border-primary" />
+                                      
+                                      <div className="glass-card p-5 rounded-xl border border-white/5">
+                                          <div className="flex justify-between items-start mb-2">
+                                              <div>
+                                                  <h4 className="font-bold text-lg">{record.shop?.name || 'Unknown Shop'}</h4>
+                                                  <div className="text-sm text-primary font-medium">{record.service?.name || 'Custom Service'}</div>
+                                              </div>
+                                              <div className="text-right">
+                                                  <div className="font-bold text-slate-200">
+                                                      {new Date(record.scheduledDate).toLocaleDateString()}
+                                                  </div>
+                                                  {record.quote?.totalEstimate && (
+                                                      <div className="text-sm text-slate-400">
+                                                          ${Number(record.quote.totalEstimate).toFixed(2)}
+                                                      </div>
+                                                  )}
+                                              </div>
+                                          </div>
+                                          
+                                          {/* Details */}
+                                          <div className="flex gap-4 text-xs text-slate-500 mt-3 pt-3 border-t border-white/5">
+                                              <div className="flex items-center gap-1">
+                                                  <MapPin className="w-3 h-3" />
+                                                  {record.shop?.address}
+                                              </div>
+                                              {record.vehicle?.mileage && (
+                                                  <div className="flex items-center gap-1">
+                                                      <Gauge className="w-3 h-3" />
+                                                      {record.vehicle.mileage} mi
+                                                  </div>
+                                              )}
+                                          </div>
+                                          
+                                          {record.notes && (
+                                              <div className="mt-3 text-sm text-slate-400 bg-slate-800/50 p-3 rounded-lg">
+                                                  <span className="opacity-70">Notes: </span>{record.notes}
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* Add Vehicle Modal */}

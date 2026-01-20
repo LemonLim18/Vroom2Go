@@ -1,0 +1,9 @@
+--- USERS IN DB ---
+USER: alex@example.com (Role: OWNER, ID: 3)
+USER: mike@speedyfix.com (Role: SHOP, ID: 4)
+USER: sarah@prestige.com (Role: SHOP, ID: 5)
+USER: admin@vroom2go.com (Role: ADMIN, ID: 6)
+USER: limmiinning@gmail.com (Role: OWNER, ID: 7)
+--- SHOPS IN DB ---
+SHOP: Speedy Fix Auto (Owner ID: 4, ID: 1)
+SHOP: Prestige Motors (Owner ID: 5, ID: 2)

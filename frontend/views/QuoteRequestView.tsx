@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Vehicle, Shop, CarType } from '../types';
+import { Vehicle, Shop, CarType, Service } from '../types';
 import { analyzeSymptomImage } from '../services/geminiService';
 import api from '../services/api';
+import { MOCK_SERVICES } from '../constants';
 import {
   Camera,
   Upload,
@@ -21,8 +22,11 @@ import {
 
 interface QuoteRequestViewProps {
   preSelectedVehicle?: Vehicle;
+  preSelectedShop?: Shop;
+  preSelectedServiceId?: string;
   onBack?: () => void;
   onSubmit?: (data: QuoteRequestData) => void;
+  onAddVehicle?: () => void;
 }
 
 interface QuoteRequestData {
@@ -50,18 +54,27 @@ const COMMON_SYMPTOMS = [
 
 export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
   preSelectedVehicle,
+  preSelectedShop,
+  preSelectedServiceId,
   onBack,
   onSubmit,
+  onAddVehicle,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(preSelectedVehicle || null);
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(() => {
+    if (preSelectedServiceId) {
+        const svc = MOCK_SERVICES.find(s => s.id === preSelectedServiceId);
+        return svc ? `I need a ${svc.name}. ${svc.description}` : '';
+    }
+    return '';
+  });
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const [photos, setPhotos] = useState<string[]>([]);
   const [availableShops, setAvailableShops] = useState<Shop[]>([]);
-  const [selectedShops, setSelectedShops] = useState<Shop[]>([]);
-  const [broadcast, setBroadcast] = useState(true);
+  const [selectedShops, setSelectedShops] = useState<Shop[]>(preSelectedShop ? [preSelectedShop] : []);
+  const [broadcast, setBroadcast] = useState(!preSelectedShop);
   const [radius, setRadius] = useState(10);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -199,11 +212,26 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
       {/* Step 1: Vehicle Selection */}
       {step === 1 && (
         <div className="space-y-6">
-          <h2 className="text-xl font-bold">Which vehicle needs service?</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Which vehicle needs service?</h2>
+            {onAddVehicle && (
+              <button onClick={onAddVehicle} className="btn btn-sm btn-ghost gap-2">
+                <Plus className="w-4 h-4" /> Add New
+              </button>
+            )}
+          </div>
           
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {vehicles.length === 0 ? (
-                <div className="col-span-full text-center py-10 opacity-50">No vehicles found. Add a vehicle first.</div>
+                <div className="col-span-full flex flex-col items-center justify-center py-10 opacity-75 gap-4">
+                  <Car className="w-12 h-12 text-slate-600" />
+                  <p className="text-slate-400">No vehicles found in your garage.</p>
+                  {onAddVehicle && (
+                    <button onClick={onAddVehicle} className="btn btn-primary btn-sm">
+                      <Plus className="w-4 h-4" /> Add a Vehicle
+                    </button>
+                  )}
+                </div>
             ) : vehicles.map(vehicle => (
               <div 
                 key={vehicle.id}
@@ -442,7 +470,7 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
                   <div className="flex items-center gap-4">
                     <img src={shop.image || 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&q=80&w=1000'} alt={shop.name} className="w-16 h-12 rounded-lg object-cover" />
                     <div className="flex-1">
-                      <h3 className="font-bold">{shop.name}</h3>
+                      <h3 className="font-bold">{shop.name}</h3>tas
                       <div className="flex items-center gap-3 text-sm text-slate-400">
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" /> {shop.distance || '0.5'} mi

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserRole, Shop } from '../types';
 import { Home, Search, Calendar, MessageSquare, User, ShieldCheck, Wrench, Menu, X, ChevronDown, FileText } from 'lucide-react';
 import { FloatingChat } from './FloatingChat';
+import { NotificationBell } from './NotificationBell';
+import api from '../services/api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -13,7 +15,145 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleChange, currentView, onNavigate, onOpenChat }) => {
+  const [conversations, setConversations] = useState<any[]>([]); // Using 'any' for now to match structure, ideally use Interface
+  const [totalUnread, setTotalUnread] = useState(0);
+  const [userId, setUserId] = useState<number>(0);
+  // Track online status of users we know about
+  const [userStatuses, setUserStatuses] = useState<Record<number, { isOnline: boolean, lastActive?: string }>>({});
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Initialize and Fetch
+  useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+       const u = JSON.parse(userStr);
+       setUserId(u.id);
+       fetchConversations(u.id);
+    }
+  }, [currentRole]); // Re-fetch on role change safely
+
+  const fetchConversations = async (uid: number) => {
+      try {
+          const { data } = await api.get('/conversations');
+          
+          let count = 0;
+          const statuses: Record<number, { isOnline: boolean, lastActive?: string }> = {};
+
+          data.forEach((c: any) => {
+              const unread = c._count?.messages || 0;
+              count += unread;
+              
+              // Extract other user's initial status if available (backend needs to return it)
+              // Currently backend `listConversations` returns User objects. 
+              // We should check if `isOnline` is returned.
+              // Assuming I'll update `listConversations` to include `isOnline`?
+              // The schema update added it, but I didn't update the controller `include`?
+              // `prisma.findMany` returns fields of the model by default unless `select` is used.
+              // In `listConversations`, we used `select` for user1/user2!
+              // So I DO need to update backend controller to return `isOnline` and `lastActive`.
+              
+              // For now, let's assume we will fix backend controller next.
+              const otherUser = c.user1Id === uid ? c.user2 : c.user1;
+              if (otherUser) {
+                  statuses[otherUser.id] = { 
+                      isOnline: otherUser.isOnline || false, 
+                      lastActive: otherUser.lastActive 
+                  };
+              }
+          });
+          setTotalUnread(count);
+          setConversations(data);
+          setUserStatuses(prev => ({ ...prev, ...statuses }));
+      } catch (err) {
+          console.error("Failed to fetch global conversations", err);
+      }
+  };
+
+  // Global socket listener for badges and status
+  useEffect(() => {
+    if (!userId) return;
+
+    import('../services/socket').then(({ socket }) => {
+      if (!socket.connected) socket.connect();
+      
+      // Join user-specific room for global notifications
+      socket.emit('join_room', `user_${userId}`);
+      
+      // Also join existing conversation rooms
+      if (conversations.length > 0) {
+        conversations.forEach(c => {
+          socket.emit('join_room', `conversation_${c.id}`);
+        });
+      }
+
+      const handleReceive = (msg: any) => {
+        if (msg.senderId !== userId) {
+          setTotalUnread(prev => prev + 1);
+          
+          setConversations(prev => {
+            const exists = prev.find(c => c.id === msg.conversationId);
+            if (!exists) {
+               // If it's a new conversation, we might need to refetch list or add it
+               // For now, refetching is safest to get all owner/shop details
+               fetchConversations(userId);
+               return prev;
+            }
+            return prev.map(c => {
+              if (c.id === msg.conversationId) {
+                return {
+                  ...c,
+                  _count: { messages: (c._count?.messages || 0) + 1 },
+                  lastMessageAt: new Date().toISOString(),
+                  messages: [{ message: msg.text, createdAt: msg.time, isRead: false }] 
+                };
+              }
+              return c;
+            });
+          });
+          
+          // Ensure we are joined to the room if it's new
+          socket.emit('join_room', `conversation_${msg.conversationId}`);
+        }
+      };
+      
+      const handleRead = (data: any) => {
+        if (data.userId === userId) {
+          setConversations(prev => {
+            const target = prev.find(c => c.id === data.conversationId);
+            if (target) {
+              const amount = target._count?.messages || 0;
+              setTotalUnread(current => Math.max(0, current - amount));
+              
+              return prev.map(c => {
+                if (c.id === data.conversationId) {
+                  return { ...c, _count: { messages: 0 }};
+                }
+                return c;
+              });
+            }
+            return prev;
+          });
+        }
+      };
+
+      const handleStatusChange = (data: { userId: number, isOnline: boolean, lastActive?: string }) => {
+        setUserStatuses(prev => ({
+          ...prev,
+          [data.userId]: { isOnline: data.isOnline, lastActive: data.lastActive }
+        }));
+      };
+
+      socket.on('receive_message', handleReceive);
+      socket.on('conversation_read', handleRead);
+      socket.on('user_status_change', handleStatusChange);
+      
+      return () => {
+        socket.off('receive_message', handleReceive);
+        socket.off('conversation_read', handleRead);
+        socket.off('user_status_change', handleStatusChange);
+      };
+    });
+  }, [userId, conversations.length]); // Re-run if userId changes or new conversation added to join its room
 
   const navItems = [
     { id: 'home', label: 'Home', icon: Home, roles: [UserRole.DRIVER] },
@@ -21,6 +161,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
     { id: 'dashboard', label: 'Garage', icon: Wrench, roles: [UserRole.SHOP] },
     { id: 'admin', label: 'HQ', icon: ShieldCheck, roles: [UserRole.ADMIN] },
     { id: 'quotes', label: 'Quotes', icon: FileText, roles: [UserRole.DRIVER] },
+    { id: 'messages', label: 'Messages', icon: MessageSquare, roles: [UserRole.DRIVER], badge: totalUnread },
     { id: 'bookings', label: 'Bookings', icon: Calendar, roles: [UserRole.DRIVER] },
     { id: 'forum', label: 'Forum', icon: MessageSquare, roles: [UserRole.DRIVER, UserRole.SHOP] },
     { id: 'profile', label: 'Profile', icon: User, roles: [UserRole.DRIVER, UserRole.SHOP, UserRole.ADMIN] },
@@ -52,15 +193,21 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`btn btn-sm btn-ghost gap-2 normal-case font-semibold ${
+              className={`btn btn-sm btn-ghost gap-2 normal-case font-semibold relative ${
                 currentView === item.id ? 'text-primary' : 'text-slate-400 hover:text-white'
               }`}
             >
               <item.icon className={`w-4 h-4 ${currentView === item.id ? 'text-primary' : ''}`} />
               {item.label}
+              {(item.badge ?? 0) > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.5)]"></span>
+              )}
               {currentView === item.id && <div className="absolute -bottom-4 left-0 w-full h-1 bg-primary rounded-t-full shadow-[0_0_10px_#FACC15]"></div>}
             </button>
           ))}
+          
+          {/* Notification Bell */}
+          <NotificationBell onNavigate={onNavigate} />
           
           <div className="dropdown dropdown-end ml-4">
             <div tabIndex={0} role="button" className="btn btn-sm bg-slate-800 border-none text-white hover:bg-slate-700 gap-2">
@@ -81,6 +228,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
         <div className="flex-none md:hidden">
             <button className="btn btn-square btn-ghost" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
               {isMobileMenuOpen ? <X /> : <Menu />}
+              {totalUnread > 0 && !isMobileMenuOpen && (
+                 <span className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900"></span>
+              )}
             </button>
         </div>
       </div>
@@ -100,14 +250,21 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
                     onNavigate(item.id);
                     setIsMobileMenuOpen(false);
                   }}
-                  className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${
+                  className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all ${
                     currentView === item.id 
                       ? 'bg-primary text-black font-bold shadow-[0_0_20px_rgba(250,204,21,0.3)]' 
                       : 'bg-slate-800/50 text-slate-300 hover:bg-slate-800'
                   }`}
                 >
-                  <item.icon className="w-6 h-6" />
-                  <span className="text-lg">{item.label}</span>
+                  <div className="flex items-center gap-4">
+                      <item.icon className="w-6 h-6" />
+                      <span className="text-lg">{item.label}</span>
+                  </div>
+                  {item.badge && item.badge > 0 && (
+                    <span className="badge badge-error text-white font-bold">
+                      {item.badge > 4 ? '4+' : item.badge}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -151,12 +308,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
       </main>
 
       {/* Floating Chat Widget */}
-      {/* Floating Chat Widget */}
-      {/* Floating Chat Widget */}
       {currentRole !== UserRole.ADMIN && (
         <FloatingChat 
           onOpenChat={(shop) => onOpenChat ? onOpenChat(shop) : onNavigate('messages')}
           onViewAll={() => onNavigate('messages')}
+          conversations={conversations} // Pass managed conversations
+          globalUnread={totalUnread}
+          userStatuses={userStatuses}
         />
       )}
     </div>

@@ -45,7 +45,11 @@ export const getPosts = async (req: any, res: Response) => {
         shopId: c.shop?.id
       })),
       tags: post.tags ? JSON.parse(JSON.stringify(post.tags)) : [],
+      images: post.images ? JSON.parse(JSON.stringify(post.images)) : [],
+      video: post.video || undefined,
+      isEdited: post.isEdited,
       createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
       viewCount: post.viewCount || 0
     }));
 
@@ -60,7 +64,7 @@ export const getPosts = async (req: any, res: Response) => {
 // @route   POST /api/forum
 export const createPost = async (req: any, res: Response) => {
   try {
-    const { title, content, tags } = req.body;
+    const { title, content, tags, images, video } = req.body;
 
     const post = await prisma.forumPost.create({
       data: {
@@ -68,6 +72,8 @@ export const createPost = async (req: any, res: Response) => {
         title,
         content,
         tags: tags || [],
+        images: images || [],
+        video: video || null,
         viewCount: 0,
         likeCount: 0,
         commentCount: 0
@@ -168,6 +174,67 @@ export const addComment = async (req: any, res: Response) => {
         date: comment.createdAt,
         shopId: comment.shop?.id
     });
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Update a post
+// @route   PUT /api/forum/:id
+export const updatePost = async (req: any, res: Response) => {
+  try {
+    const postId = parseInt(req.params.id);
+    const { content } = req.body;
+    const userId = req.user.id;
+
+    const post = await prisma.forumPost.findUnique({ where: { id: postId } });
+
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    // Check ownership
+    if (post.userId !== userId && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Not authorized to edit this post' });
+    }
+
+    const updatedPost = await prisma.forumPost.update({
+      where: { id: postId },
+      data: {
+        content,
+        isEdited: true
+      }
+    });
+
+    res.json(updatedPost);
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete a post
+// @route   DELETE /api/forum/:id
+export const deletePost = async (req: any, res: Response) => {
+  try {
+    const postId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    const post = await prisma.forumPost.findUnique({ where: { id: postId } });
+
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    // Check ownership
+    if (post.userId !== userId && req.user.role !== 'ADMIN') {
+        return res.status(403).json({ message: 'Not authorized to delete this post' });
+    }
+
+    await prisma.forumPost.delete({ where: { id: postId } });
+
+    res.json({ message: 'Post removed' });
   } catch (error: any) {
     console.error(error);
     res.status(500).json({ message: error.message });

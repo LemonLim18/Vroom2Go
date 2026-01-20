@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Shop, Service, Vehicle, BookingMethod } from '../types';
+import { Shop, Service, Vehicle, BookingMethod, Quote } from '../types';
 import { MOCK_SERVICES } from '../constants';
 import { 
   Calendar, 
@@ -24,9 +24,14 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+// Local Quote interface removed - using imported type from ../types
+// Ensure Quote is imported in line 4:
+// import { Shop, Service, Vehicle, BookingMethod, Quote } from '../types';
+
 interface BookingViewProps {
   shop: Shop;
   initialServiceId?: string;
+  quote?: Quote; // New optional prop
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -45,10 +50,16 @@ const SAVED_CARDS: SavedCard[] = [
   { id: 'card2', last4: '1234', brand: 'mastercard', isDefault: false },
 ];
 
-export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId, onConfirm, onCancel }) => {
-  const [selectedServiceId, setSelectedServiceId] = useState<string>(initialServiceId || shop.services[0]);
+export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId, quote, onConfirm, onCancel }) => {
+  // Use quote service if available, else initial, else first shop service
+  const [selectedServiceId, setSelectedServiceId] = useState<string>(
+    quote?.serviceId || initialServiceId || shop.services?.[0] || 'general'
+  );
+
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+  // Pre-select vehicle from quote if present
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>(quote?.vehicleId || '');
+
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [bookingMethod, setBookingMethod] = useState<BookingMethod>(BookingMethod.DROP_OFF);
@@ -57,7 +68,7 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
   const [selectedCardId, setSelectedCardId] = useState<string>(SAVED_CARDS[0].id);
   const [showAddCard, setShowAddCard] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
@@ -74,13 +85,15 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
             year: v.year,
             type: v.type, // Enum match expected
             vin: v.vin,
-            image: v.image_url || 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1000',
+            image: v.imageUrl || v.image || 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1000',
             mileage: v.mileage,
-            licensePlate: v.license_plate
+            licensePlate: v.licensePlate
         }));
 
         setVehicles(mappedUserVehicles);
-        if (mappedUserVehicles.length > 0) {
+
+        // Only default select if NO quote and NO pre-selection
+        if (!selectedVehicleId && !quote && mappedUserVehicles.length > 0) {
             setSelectedVehicleId(mappedUserVehicles[0].id);
         }
       } catch (error) {
@@ -88,7 +101,7 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
       }
     };
     fetchVehicles();
-  }, []);
+  }, [quote, selectedVehicleId]); // Add dependencies
 
   // Show toast notification
   const showToast = (message: string) => {
@@ -97,14 +110,18 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
   };
 
   const selectedService = MOCK_SERVICES.find(s => s.id === selectedServiceId);
-  const basePriceString = shop.customPrices[selectedServiceId] || '0';
-  const basePrice = parseFloat(basePriceString.replace(/[^0-9.]/g, ''));
-  
+
+  // PRICING LOGIC
+  let basePrice = 0;
+  let totalPrice = 0;
+  let depositAmount = 0;
+  let taxes = 0;
+
   const TOW_FEE = 85.00;
   const MOBILE_FEE = 45.00;
   const PLATFORM_FEE = 2.99;
   const TAX_RATE = 0.0825;
-  
+
   let extraFee = 0;
   let feeLabel = '';
 
@@ -116,10 +133,34 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
     feeLabel = 'Mobile Pit Service';
   }
 
-  const subtotal = basePrice + extraFee;
-  const taxes = subtotal * TAX_RATE;
-  const totalPrice = subtotal + taxes + PLATFORM_FEE;
-  const depositAmount = (totalPrice * 0.20);
+  if (quote) {
+    // Override pricing with Quote data
+    // If quote has estimatedTotal, use it as the base 'service' part (minus platform/extra fees if needed, or just treat as base)
+    // For simplicity, we treat quote.estimatedTotal as the Service + Parts + Labor + Tax (Shop side)
+    // We add Platform Fee & Extra Fee (Tow) on top.
+
+    // NOTE: quote.estimatedTotal ALREADY includes taxes/shop fees typically.
+    // So we use it as the main subtotal.
+    basePrice = quote.estimatedTotal;
+
+    const finalTotal = basePrice + extraFee + PLATFORM_FEE;
+    totalPrice = finalTotal;
+
+    // Deposit uses shop % from quote if available, or 20% default
+    // We can assume quote object might carry deposit info, but recalculating is safer with extras
+    depositAmount = totalPrice * 0.20;
+
+  } else {
+    // Standard Direct Booking Logic
+    const basePriceString = shop.customPrices?.[selectedServiceId] || '0';
+    basePrice = parseFloat(basePriceString.replace(/[^0-9.]/g, ''));
+
+    const subtotal = basePrice + extraFee;
+    taxes = subtotal * TAX_RATE;
+    totalPrice = subtotal + taxes + PLATFORM_FEE;
+    depositAmount = (totalPrice * 0.20);
+  }
+
   const remainingBalance = totalPrice - depositAmount;
 
   const handleConfirm = async () => {
@@ -127,17 +168,68 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
 
     setIsProcessing(true);
     try {
+      // Check if we are using mock data (non-numeric IDs)
+      // If so, simulate success without backend call to prevent 500 error
+      const isMockShop = isNaN(Number(shop.id));
+      const isMockService = isNaN(Number(selectedServiceId));
+
+      if (isMockShop || isMockService || (quote && isNaN(Number(quote.id)))) {
+          console.warn('Handling mock booking locally');
+
+          // Create a realistic mock booking object for frontend display
+          const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId);
+          const mockBooking = {
+              id: Date.now(), // Generate a unique numeric ID
+              scheduledDate: selectedDate,
+              scheduledTime: `${selectedDate} ${selectedTime}`,
+              status: 'PENDING',
+              method: bookingMethod,
+              notes: quote ? `Booking from Quote #${quote.id}` : `Service: ${selectedService?.name || 'General'}`,
+              userId: 999,
+              shopId: 0, // Use 0 to indicate mock/unknown
+              quoteId: quote?.id, // Link quote
+              shop: {
+                  name: shop.name,
+                  address: shop.address,
+                  imageUrl: shop.imageUrl || shop.image,
+                  phone: shop.phone
+              },
+              vehicle: {
+                  make: selectedVehicle?.make || 'Unknown',
+                  model: selectedVehicle?.model || 'Vehicle',
+                  year: selectedVehicle?.year || 2024,
+                  licensePlate: selectedVehicle?.licensePlate
+              },
+              service: { name: selectedService?.name || 'General Service' },
+              quote: { totalEstimate: totalPrice }
+          };
+
+          // Save to localStorage so MyBookingsView can find it
+          const existing = JSON.parse(localStorage.getItem('vroom_mock_bookings') || '[]');
+          localStorage.setItem('vroom_mock_bookings', JSON.stringify([mockBooking, ...existing]));
+
+          await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
+          setIsSuccess(true);
+          return;
+      }
+
       const payload = {
         shopId: shop.id,
         vehicleId: selectedVehicleId,
-        serviceName: selectedService?.name || 'General Service',
-        date: `${selectedDate} ${selectedTime}`, // Simplified datetime string
-        price: totalPrice,
-        status: 'Pending'
+        serviceId: selectedServiceId, // Send the ID, backend parsies it
+        quoteId: quote?.id, // Link to quote if present
+        scheduledDate: selectedDate,
+        scheduledTime: `${selectedDate} ${selectedTime}`,
+        method: bookingMethod,
+        notes: quote ? `Booking from Quote #${quote.id}` : `Service: ${selectedService?.name || 'General'}`, // Add service name to notes as fallback
+        status: 'PENDING'
       };
 
       await api.post('/bookings', payload);
-      
+
+      // If success and it was a quote, maybe mark quote as ACCEPTED via API?
+      // The backend creation of booking with quoteId might handle this transition automatically.
+
       setIsSuccess(true);
     } catch (error) {
       console.error('Booking failed', error);
@@ -216,8 +308,12 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                       className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center gap-4 ${selectedVehicleId === v.id ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(250,204,21,0.1)]' : 'bg-slate-800/30 border-white/5 hover:border-white/10'}`}
                       onClick={() => setSelectedVehicleId(v.id)}
                     >
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedVehicleId === v.id ? 'bg-primary text-black' : 'bg-slate-800 text-slate-500'}`}>
-                        <Car className="w-6 h-6" />
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden ${selectedVehicleId === v.id ? 'bg-primary text-black' : 'bg-slate-800 text-slate-500'}`}>
+                        {v.image ? (
+                          <img src={v.image} alt={`${v.make} ${v.model}`} className="w-full h-full object-cover" />
+                        ) : (
+                          <Car className="w-6 h-6" />
+                        )}
                       </div>
                       <div className="flex-1">
                         <div className="font-black italic uppercase tracking-tighter">{v.year} {v.make} {v.model}</div>
@@ -264,12 +360,12 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
 
               <section>
                 <h3 className="text-sm font-black text-primary uppercase tracking-widest mb-4 flex items-center gap-2">
-                   <ChevronRight className="w-4 h-4" /> Pit Timing
+                   <ChevronRight className="w-4 h-4" /> Service Date & Time
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <input type="date" className="input bg-slate-800/50 border-white/5 rounded-xl font-bold italic" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
                   <select className="select bg-slate-800/50 border-white/5 rounded-xl font-bold italic" value={selectedTime} onChange={(e) => setSelectedTime(e.target.value)}>
-                    <option disabled value="">Select Lap</option>
+                    <option disabled value="">Select Available Time</option>
                     <option>09:00 AM</option>
                     <option>11:00 AM</option>
                     <option>02:00 PM</option>

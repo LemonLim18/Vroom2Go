@@ -182,6 +182,9 @@ model User {
   conversations2   Conversation[]   @relation("c2")
   QuoteRequest     QuoteRequest[]
 
+  isOnline         Boolean          @default(false) @map("is_online")
+  lastActive       DateTime         @default(now()) @map("last_active")
+
   @@index([email])
   @@index([role])
   @@map("users")
@@ -299,6 +302,19 @@ model ServicePricing {
   @@map("service_pricing")
 }
 
+model DiagnosticPackage {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?  @db.Text
+  price       Decimal  @db.Decimal(10, 2)
+  duration    String
+  includes    Json?    // Array of strings
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("diagnostic_packages")
+}
+
 model ShopService {
   id             Int      @id @default(autoincrement())
   shopId         Int      @map("shop_id")
@@ -317,7 +333,7 @@ model ShopService {
 model Vehicle {
   id           Int      @id @default(autoincrement())
   userId       Int      @map("user_id")
-  vin          String?  @unique
+  vin          String?
   make         String
   model        String
   year         Int
@@ -650,9 +666,12 @@ model ForumPost {
   content      String        @db.Text
   category     ForumCategory @default(DISCUSSION)
   tags         Json?
+  images       Json?         // Array of strings (urls)
+  video        String?       // URL to video
   viewCount    Int           @default(0) @map("view_count")
   likeCount    Int           @default(0) @map("like_count")
   commentCount Int           @default(0) @map("comment_count")
+  isEdited     Boolean       @default(false) @map("is_edited")
   isPinned     Boolean       @default(false) @map("is_pinned")
   isLocked     Boolean       @default(false) @map("is_locked")
   createdAt    DateTime      @default(now()) @map("created_at")

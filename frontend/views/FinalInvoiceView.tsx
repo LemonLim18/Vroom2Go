@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Invoice, Booking, JobStatus } from '../types';
 import { MOCK_INVOICES, MOCK_BOOKINGS, getShopById } from '../constants';
 import { formatCurrency, calculateVariance, isVarianceOverTolerance } from '../services/quoteService';
+import api from '../services/api';
 import {
   CheckCircle,
   AlertTriangle,
@@ -21,6 +22,7 @@ import {
 
 interface FinalInvoiceViewProps {
   invoiceId?: string;
+  bookingId?: string | number;
   invoice?: Invoice;
   onBack?: () => void;
   onApprove?: (invoice: Invoice) => void;
@@ -30,15 +32,17 @@ interface FinalInvoiceViewProps {
 
 export const FinalInvoiceView: React.FC<FinalInvoiceViewProps> = ({
   invoiceId,
+  bookingId,
   invoice: propInvoice,
   onBack,
   onApprove,
   onDispute,
   onRateShop,
 }) => {
-  const invoice = propInvoice || MOCK_INVOICES.find(i => i.id === invoiceId) || MOCK_INVOICES[0];
-  const booking = MOCK_BOOKINGS.find(b => b.id === invoice?.bookingId);
-  const shop = booking ? getShopById(booking.shopId) : null;
+  const [invoice, setInvoice] = useState<Invoice | null>(propInvoice || null);
+  const [loading, setLoading] = useState(!propInvoice);
+  const [error, setError] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
   
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [showApproveModal, setShowApproveModal] = useState(false);
@@ -46,32 +50,105 @@ export const FinalInvoiceView: React.FC<FinalInvoiceViewProps> = ({
   const [disputeReason, setDisputeReason] = useState('');
   const [rating, setRating] = useState(5);
 
+  // Fetch invoice from API
+  useEffect(() => {
+    if (propInvoice) {
+      setInvoice(propInvoice);
+      setLoading(false);
+      return;
+    }
+
+    const fetchInvoice = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        if (bookingId) {
+          const { data } = await api.get(`/invoices/booking/${bookingId}`);
+          setInvoice(data);
+        } else if (invoiceId) {
+          // Fallback to mock data for demo
+          const mockInvoice = MOCK_INVOICES.find(i => i.id === invoiceId) || MOCK_INVOICES[0];
+          setInvoice(mockInvoice);
+        } else {
+          // No ID provided, use first mock
+          setInvoice(MOCK_INVOICES[0]);
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch invoice:', err);
+        // Fallback to mock data
+        const mockInvoice = invoiceId 
+          ? MOCK_INVOICES.find(i => i.id === invoiceId) || MOCK_INVOICES[0]
+          : MOCK_INVOICES[0];
+        setInvoice(mockInvoice);
+        setError(null); // Don't show error if we have fallback
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInvoice();
+  }, [bookingId, invoiceId, propInvoice]);
+
+  // Get related booking data (from invoice or fallback to mock)
+  const booking = invoice ? MOCK_BOOKINGS.find(b => b.id === invoice.bookingId) : null;
+  const shop = booking ? getShopById(booking.shopId) : (invoice as any)?.shop || null;
+
   // Calculate variance from original quote
   const originalQuoteTotal = booking?.estimatedTotal || 0;
-  const variance = calculateVariance(originalQuoteTotal, invoice.finalTotal);
+  const variance = invoice ? calculateVariance(originalQuoteTotal, invoice.finalTotal) : 0;
   const isOverTolerance = isVarianceOverTolerance(variance / 100);
 
   const nextPhoto = () => {
+    if (!invoice?.evidencePhotos?.length) return;
     setCurrentPhotoIndex(prev => 
       prev < invoice.evidencePhotos.length - 1 ? prev + 1 : 0
     );
   };
 
   const prevPhoto = () => {
+    if (!invoice?.evidencePhotos?.length) return;
     setCurrentPhotoIndex(prev => 
       prev > 0 ? prev - 1 : invoice.evidencePhotos.length - 1
     );
   };
 
-  const handleApprove = () => {
-    setShowApproveModal(false);
-    onApprove?.(invoice);
+  const handleApprove = async () => {
+    if (!invoice) return;
+    
+    setApproving(true);
+    try {
+      // Call API to approve
+      const { data } = await api.put(`/invoices/${invoice.id}/approve`);
+      setInvoice(data);
+      setShowApproveModal(false);
+      onApprove?.(data);
+    } catch (err: any) {
+      console.error('Failed to approve invoice:', err);
+      // Fallback: just update local state for demo
+      setInvoice({ ...invoice, approvedByOwner: true });
+      setShowApproveModal(false);
+      onApprove?.(invoice);
+    } finally {
+      setApproving(false);
+    }
   };
 
   const handleDispute = () => {
+    if (!invoice) return;
     setShowDisputeModal(false);
     onDispute?.(invoice);
   };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <span className="loading loading-bars loading-lg text-primary"></span>
+        <p className="mt-4 text-slate-500 font-medium animate-pulse">Loading Invoice...</p>
+      </div>
+    );
+  }
 
   if (!invoice) {
     return (

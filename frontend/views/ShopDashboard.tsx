@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import api from '../services/api';
 import Swal from 'sweetalert2';
 import { ShopChatInterface } from '../components/ShopChatInterface';
-import { MOCK_BOOKINGS, MOCK_QUOTES, MOCK_QUOTE_REQUESTS } from '../constants';
+import { QuoteRequest, Booking } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { 
   Calendar, 
@@ -71,7 +71,7 @@ export const ShopDashboard: React.FC = () => {
   const [showEditScheduleModal, setShowEditScheduleModal] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [showMessageModal, setShowMessageModal] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<typeof MOCK_QUOTE_REQUESTS[0] | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<QuoteRequest | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [quoteRequests, setQuoteRequests] = useState<any[]>([]);
   const [shopMetrics, setShopMetrics] = useState({
@@ -80,7 +80,12 @@ export const ShopDashboard: React.FC = () => {
     pendingBookings: 0,
     avgResponseMinutes: 0,
     rating: 0,
-    reviewCount: 0
+    reviewCount: 0,
+    charts: {
+      revenue: [],
+      monthly: [],
+      services: []
+    }
   });
   const [shopBookings, setShopBookings] = useState<any[]>([]);
   const [updatingBookingId, setUpdatingBookingId] = useState<number | null>(null);
@@ -93,7 +98,11 @@ export const ShopDashboard: React.FC = () => {
       const fetchRequests = async () => {
           try {
               const { data } = await api.get('/quotes/requests/shop');
-              setQuoteRequests(data);
+              const mapped = data.map((r: any) => ({
+                  ...r,
+                  vehicleInfo: r.vehicle || r.vehicleInfo
+              }));
+              setQuoteRequests(mapped);
           } catch (error) {
               console.error('Failed to fetch quote requests', error);
           }
@@ -255,16 +264,16 @@ export const ShopDashboard: React.FC = () => {
     setSelectedRequest(null);
   };
 
-  const handleDecline = (request: typeof MOCK_QUOTE_REQUESTS[0]) => {
+  const handleDecline = (request: QuoteRequest) => {
     showToast(`Request declined for ${request.vehicleInfo?.make} ${request.vehicleInfo?.model}`);
   };
 
-  const handleMessage = (request: typeof MOCK_QUOTE_REQUESTS[0]) => {
+  const handleMessage = (request: QuoteRequest) => {
     setSelectedRequest(request);
     setShowMessageModal(true);
   };
 
-  const handleOpenQuoteModal = (request: typeof MOCK_QUOTE_REQUESTS[0]) => {
+  const handleOpenQuoteModal = (request: QuoteRequest) => {
     setSelectedRequest(request);
     setShowQuoteModal(true);
   };
@@ -390,7 +399,7 @@ export const ShopDashboard: React.FC = () => {
             <div className="glass-card rounded-2xl p-6 border border-white/5">
               <h2 className="font-bold text-lg mb-4">Upcoming Jobs</h2>
               <div className="space-y-3">
-                {MOCK_BOOKINGS.slice(0, 4).map((booking) => (
+                {shopBookings.slice(0, 4).map((booking: any) => (
                   <div key={booking.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
                     <div>
                       <p className="font-bold text-sm">{booking.serviceName}</p>
@@ -854,9 +863,9 @@ export const ShopDashboard: React.FC = () => {
               <h3 className="font-bold text-lg mb-4">Monthly Performance</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={monthlyData}>
+                  <LineChart data={shopMetrics.charts?.monthly?.length ? shopMetrics.charts.monthly : monthlyData}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                    <XAxis dataKey="month" axisLine={false} tickLine={false} />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} />
                     <YAxis yAxisId="left" axisLine={false} tickLine={false} />
                     <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
@@ -884,7 +893,7 @@ export const ShopDashboard: React.FC = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={serviceBreakdown}
+                      data={shopMetrics.charts?.services?.length ? shopMetrics.charts.services : serviceBreakdown}
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
@@ -892,8 +901,8 @@ export const ShopDashboard: React.FC = () => {
                       paddingAngle={5}
                       dataKey="value"
                     >
-                      {serviceBreakdown.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      {(shopMetrics.charts?.services?.length ? shopMetrics.charts.services : serviceBreakdown).map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={entry.color || ['#facc15', '#3b82f6', '#10b981', '#8b5cf6', '#6b7280'][index % 5]} />
                       ))}
                     </Pie>
                     <Tooltip />
@@ -901,9 +910,9 @@ export const ShopDashboard: React.FC = () => {
                 </ResponsiveContainer>
               </div>
               <div className="flex flex-wrap justify-center gap-4 mt-4">
-                {serviceBreakdown.map((item) => (
+                {(shopMetrics.charts?.services?.length ? shopMetrics.charts.services : serviceBreakdown).map((item: any, index: number) => (
                   <div key={item.name} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color || ['#facc15', '#3b82f6', '#10b981', '#8b5cf6', '#6b7280'][index % 5] }}></div>
                     <span className="text-xs text-slate-400">{item.name} ({item.value}%)</span>
                   </div>
                 ))}
@@ -912,22 +921,23 @@ export const ShopDashboard: React.FC = () => {
           </div>
 
           {/* Key Metrics */}
+          {/* Key Metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="glass-card rounded-2xl p-5 border border-white/5 text-center">
-              <p className="text-3xl font-black text-green-400">98%</p>
-              <p className="text-sm text-slate-400">Completion Rate</p>
+              <p className="text-3xl font-black text-green-400">{shopMetrics.rating || '-'}</p>
+              <p className="text-sm text-slate-400">Shop Rating</p>
             </div>
             <div className="glass-card rounded-2xl p-5 border border-white/5 text-center">
-              <p className="text-3xl font-black">$245</p>
-              <p className="text-sm text-slate-400">Avg Ticket Size</p>
+              <p className="text-3xl font-black">${shopMetrics.weeklyRevenue?.toLocaleString() || '0'}</p>
+              <p className="text-sm text-slate-400">Weekly Revenue</p>
             </div>
             <div className="glass-card rounded-2xl p-5 border border-white/5 text-center">
-              <p className="text-3xl font-black text-primary">156</p>
-              <p className="text-sm text-slate-400">Total Customers</p>
+              <p className="text-3xl font-black text-primary">{shopMetrics.newBookings || '0'}</p>
+              <p className="text-sm text-slate-400">New Bookings</p>
             </div>
             <div className="glass-card rounded-2xl p-5 border border-white/5 text-center">
-              <p className="text-3xl font-black">0</p>
-              <p className="text-sm text-slate-400">Disputes</p>
+              <p className="text-3xl font-black">{shopMetrics.reviewCount || '0'}</p>
+              <p className="text-sm text-slate-400">Total Reviews</p>
             </div>
           </div>
         </div>
@@ -988,7 +998,7 @@ export const ShopDashboard: React.FC = () => {
             </div>
             <div className="p-6 overflow-y-auto max-h-[60vh]">
               <div className="space-y-3">
-                {MOCK_BOOKINGS.map((booking) => (
+                {shopBookings.map((booking: any) => (
                   <div key={booking.id} className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl">
                     <div>
                       <p className="font-bold">{booking.serviceName}</p>

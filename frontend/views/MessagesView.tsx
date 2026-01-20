@@ -4,9 +4,10 @@ import { ShopChatInterface } from '../components/ShopChatInterface';
 
 interface MessagesViewProps {
   onSelectConversation: (shop: Shop) => void;
+  targetUserId?: number; // Optional target user ID for auto-selection
 }
 
-export const MessagesView: React.FC<MessagesViewProps> = ({ onSelectConversation }) => {
+export const MessagesView: React.FC<MessagesViewProps> = ({ onSelectConversation, targetUserId }) => {
   return (
     <div className="animate-in fade-in duration-500 container mx-auto h-[calc(100vh-140px)] flex flex-col pt-4">
       <div className="mb-4 flex-none">
@@ -17,7 +18,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ onSelectConversation
       </div>
 
       <div className="flex-1 min-h-0">
-        <ShopChatInterface />
+        <ShopChatInterface initialTargetUserId={targetUserId} />
       </div>
     </div>
   );

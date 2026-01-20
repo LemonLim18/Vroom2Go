@@ -29,6 +29,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { decodeVIN, formatVINMasked } from '../services/vinService';
+import { showAlert } from '../utils/alerts';
 
 type ProfileTab = 'vehicles' | 'history' | 'settings';
 
@@ -351,7 +352,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
              image: data.imageUrl || data.image || v.image
           } : v));
           
-          showToast('Vehicle updated successfully!');
+          showAlert.success('Vehicle updated successfully!');
       } else {
           const { data } = await api.post('/vehicles', formDataObj, {
             headers: { 'Content-Type': 'multipart/form-data' }
@@ -364,7 +365,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
             image: data.imageUrl || data.image || `https://source.unsplash.com/random/800x600/?car,${data.make}`
           }]);
           
-          showToast('Vehicle added successfully!');
+          showAlert.success('Vehicle added successfully!');
       }
       
       resetForm();
@@ -375,19 +376,20 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
           `${error.response.data.message} ${error.response.data.details ? JSON.stringify(error.response.data.details) : ''}` 
           : 'Failed to save vehicle.';
        setFormError(msg);
-       showToast(msg);
+       showAlert.error(msg);
     }
   };
 
   const handleDeleteVehicle = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this vehicle?')) return;
+    const confirmed = await showAlert.confirm('Are you sure you want to delete this vehicle?');
+    if (!confirmed) return;
     try {
       await api.delete(`/vehicles/${id}`);
       setVehicles(vehicles.filter(v => v.id !== id));
-      showToast('Vehicle removed');
+      showAlert.success('Vehicle removed');
     } catch (error) {
        console.error('Failed to delete', error);
-       showToast('Could not delete vehicle');
+       showAlert.error('Could not delete vehicle');
     }
   };
 
@@ -725,7 +727,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                   <label className="label"><span className="label-text">Phone</span></label>
                   <input type="tel" defaultValue="+1 (555) 123-4567" className="input input-bordered bg-slate-800 border-white/10" />
                 </div>
-                <button onClick={() => showToast('Profile updated successfully!')} className="btn btn-primary">Save Changes</button>
+                <button onClick={() => showAlert.success('Profile updated successfully!')} className="btn btn-primary">Save Changes</button>
               </div>
             </div>
 
@@ -790,9 +792,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
             <div className="glass-card rounded-2xl p-5 border border-red-500/20 bg-red-500/5">
               <h3 className="font-bold mb-4 text-red-400">Danger Zone</h3>
               <button 
-                onClick={() => {
-                  showToast('Signed out successfully');
-                  if (onLogout) onLogout();
+                onClick={async () => {
+                  const confirmed = await showAlert.confirm('Are you sure you want to sign out?', 'Sign Out');
+                  if (confirmed) {
+                    showAlert.success('Signed out successfully');
+                    if (onLogout) onLogout();
+                  }
                 }} 
                 className="btn btn-outline btn-error btn-sm w-full gap-2"
               >

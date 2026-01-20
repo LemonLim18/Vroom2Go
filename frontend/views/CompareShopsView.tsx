@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Shop, Service, Quote, CarType } from '../types';
-import { MOCK_SHOPS, MOCK_SERVICES, MOCK_QUOTES } from '../constants';
+import { MOCK_QUOTES } from '../constants';
 import { formatCurrency, getConfidenceLabel } from '../services/quoteService';
+import api from '../services/api';
 import { 
   Star, 
   MapPin, 
@@ -34,16 +35,86 @@ export const CompareShopsView: React.FC<CompareShopsViewProps> = ({
   onSelectShop,
   onRequestQuote,
 }) => {
-  const [selectedShops, setSelectedShops] = useState<Shop[]>(
-    preSelectedShops || MOCK_SHOPS.slice(0, 3)
-  );
+  const [allShops, setAllShops] = useState<Shop[]>([]);
+  const [allServices, setAllServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch shops and services from API
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [shopsRes, servicesRes] = await Promise.all([
+          api.get('/shops'),
+          api.get('/services')
+        ]);
+        
+        // Map shops from API
+        const mappedShops: Shop[] = shopsRes.data.map((s: any) => ({
+          id: s.id,
+          userId: s.userId,
+          name: s.name,
+          address: s.address,
+          image: s.imageUrl || 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=1000',
+          rating: Number(s.rating) || 0,
+          reviewCount: s._count?.reviews || s.reviewCount || 0,
+          verified: s.verified,
+          laborRate: Number(s.laborRate),
+          services: s.services?.map((svc: any) => String(svc.service?.id || svc.serviceId)) || [],
+          customPrices: s.services?.reduce((acc: any, svc: any) => {
+            if (svc.customPrice && svc.service?.id) {
+              acc[String(svc.service.id)] = `$${svc.customPrice}`;
+            }
+            return acc;
+          }, {}) || {}
+        }));
+        setAllShops(mappedShops);
+
+        // Map services
+        const mappedServices: Service[] = servicesRes.data.map((s: any) => ({
+          id: String(s.id),
+          name: s.name,
+          category: s.category === 'MAINTENANCE' ? 'Maintenance' : s.category === 'REPAIR' ? 'Repair' : 'Diagnostic',
+          description: s.description,
+          duration: s.durationEst ? `${s.durationEst} mins` : '60 mins',
+          priceRange: {}
+        }));
+        setAllServices(mappedServices);
+      } catch (error) {
+        console.error('Failed to fetch data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const service = useMemo(() => 
+    serviceId ? allServices.find(s => s.id === serviceId) : null
+  , [serviceId, allServices]);
+
+  // Filter shops that offer this service
+  const shopsOfferingService = useMemo(() => {
+    if (!serviceId) return allShops;
+    return allShops.filter(shop => shop.services?.includes(serviceId));
+  }, [serviceId, allShops]);
+
+  const [selectedShops, setSelectedShops] = useState<Shop[]>([]);
   const [showShopPicker, setShowShopPicker] = useState(false);
 
-  const service = serviceId ? MOCK_SERVICES.find(s => s.id === serviceId) : null;
+  // Initialize selected shops when data loads
+  useEffect(() => {
+    if (shopsOfferingService.length > 0 && selectedShops.length === 0) {
+      if (preSelectedShops) {
+        setSelectedShops(preSelectedShops);
+      } else {
+        setSelectedShops(shopsOfferingService.slice(0, 3));
+      }
+    }
+  }, [shopsOfferingService, preSelectedShops]);
 
   // Get quotes for comparison if available
   const getShopQuote = (shopId: string | number): Quote | undefined => {
-    return MOCK_QUOTES.find(q => q.shopId === String(shopId));
+    return MOCK_QUOTES.find(q => q.shopId === String(shopId) && q.serviceId === serviceId);
   };
 
   const addShop = (shop: Shop) => {
@@ -60,9 +131,17 @@ export const CompareShopsView: React.FC<CompareShopsViewProps> = ({
   const getLowestPrice = (): number => {
     const prices = selectedShops.map(shop => {
       const quote = getShopQuote(shop.id);
-      return quote?.estimatedTotal || 0;
+      if (quote) return quote.estimatedTotal;
+      
+      // Fallback to customPrice if no quote
+      const customPriceStr = shop.customPrices[serviceId || ''];
+      if (customPriceStr) {
+        return parseFloat(customPriceStr.replace(/[^0-9.]/g, '')) || 0;
+      }
+      return 0;
     }).filter(p => p > 0);
-    return Math.min(...prices);
+    
+    return prices.length > 0 ? Math.min(...prices) : 0;
   };
 
   const getComparisonValue = (current: number, lowest: number): 'best' | 'mid' | 'high' => {
@@ -71,9 +150,38 @@ export const CompareShopsView: React.FC<CompareShopsViewProps> = ({
     return 'high';
   };
 
-  const availableShops = MOCK_SHOPS.filter(
+  const availableShops = shopsOfferingService.filter(
     shop => !selectedShops.find(s => s.id === shop.id)
   );
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <span className="loading loading-bars loading-lg text-primary"></span>
+        <p className="mt-4 text-slate-500 font-medium animate-pulse">Loading shops...</p>
+      </div>
+    );
+  }
+
+  // No shops offering this service
+  if (serviceId && shopsOfferingService.length === 0) {
+    return (
+      <div className="animate-in fade-in duration-500">
+        {onBack && (
+          <button onClick={onBack} className="btn btn-ghost btn-sm mb-4">← Back</button>
+        )}
+        <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
+          <AlertCircle className="w-16 h-16 text-slate-500 mb-4" />
+          <h2 className="text-2xl font-bold mb-2">No Shops Found</h2>
+          <p className="text-slate-400 max-w-md">
+            Unfortunately, no shops in our network currently offer this service. 
+            Please try a different service or check back later.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-in fade-in duration-500">

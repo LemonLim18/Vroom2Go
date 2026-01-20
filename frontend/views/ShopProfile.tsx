@@ -47,29 +47,35 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
     
     if (Array.isArray(shop.services)) {
         shop.services.forEach((shopService: any) => {
-            // Handle both structure types:
-            // 1. Backend: { service: { ... }, customPrice: "..." }
-            // 2. Frontend Mock: "service_id_string" (legacy)
-            
-            let service: Service | undefined;
+            let service: any;
             let price = 'Quote';
 
             if (typeof shopService === 'string') {
                 service = getServiceDetails(shopService);
                 price = shop.customPrices?.[shopService] || 'Quote';
             } else if (shopService.service) {
-                service = shopService.service;
-                price = shopService.customPrice || 'Quote';
+                // Transform backend service structure to frontend type
+                const s = shopService.service;
+                const categoryMap: any = { 'MAINTENANCE': 'Maintenance', 'REPAIR': 'Repair', 'DIAGNOSTIC': 'Diagnostic' };
+                const normalizedCategory = categoryMap[s.category] || s.category;
+
+                service = {
+                    id: String(s.id),
+                    name: s.name,
+                    category: normalizedCategory,
+                    description: s.description,
+                    duration: s.durationEst ? `${s.durationEst} mins` : '60 mins',
+                    priceRange: {} // Range isn't used in the profile menu list
+                };
+                price = shopService.customPrice ? `$${shopService.customPrice}` : 'Quote';
             }
 
             if (service) {
-                if (!grouped[service.category]) {
-                grouped[service.category] = [];
+                const cat = service.category;
+                if (!grouped[cat]) {
+                    grouped[cat] = [];
                 }
-                grouped[service.category].push({
-                service,
-                price
-                });
+                grouped[cat].push({ service, price });
             }
         });
     }

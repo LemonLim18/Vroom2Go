@@ -106,10 +106,10 @@ export const listConversations = async (req: any, res: Response) => {
             },
             include: {
                 user1: {
-                    select: { id: true, name: true, avatarUrl: true, role: true }
+                    select: { id: true, name: true, avatarUrl: true, role: true, isOnline: true, lastActive: true }
                 },
                 user2: {
-                    select: { id: true, name: true, avatarUrl: true, role: true }
+                    select: { id: true, name: true, avatarUrl: true, role: true, isOnline: true, lastActive: true }
                 },
                 shop: {
                     select: { id: true, name: true, imageUrl: true, userId: true }
@@ -117,6 +117,16 @@ export const listConversations = async (req: any, res: Response) => {
                 messages: {
                     orderBy: { createdAt: 'desc' },
                     take: 1
+                },
+                _count: {
+                    select: {
+                        messages: {
+                            where: {
+                                isRead: false,
+                                senderId: { not: userId }
+                            }
+                        }
+                    }
                 }
             },
             orderBy: { lastMessageAt: 'desc' }
@@ -216,7 +226,20 @@ export const sendMessage = async (req: any, res: Response) => {
         const io = getIO();
         const roomId = `conversation_${conversationId}`;
         
+        const recipientId = conversation.user1Id === senderId ? conversation.user2Id : conversation.user1Id;
+        
         io.to(roomId).emit('receive_message', {
+            id: newMessage.id,
+            conversationId: conversationId,
+            senderId: senderId,
+            text: newMessage.message,
+            attachmentUrl: newMessage.attachmentUrl,
+            time: newMessage.createdAt,
+            isRead: false
+        });
+
+        // Also emit to recipient's personal room for layout/notification totalUnread sync
+        io.to(`user_${recipientId}`).emit('receive_message', {
             id: newMessage.id,
             conversationId: conversationId,
             senderId: senderId,
@@ -299,7 +322,19 @@ export const sendMessageToUser = async (req: any, res: Response) => {
             senderId: myId,
             text: newMessage.message,
              attachmentUrl: newMessage.attachmentUrl,
-            time: newMessage.createdAt
+            time: newMessage.createdAt,
+            isRead: false
+        });
+
+        // Also emit to recipient's personal room for layout/notification sync
+        io.to(`user_${targetUserId}`).emit('receive_message', {
+            id: newMessage.id,
+            conversationId: conversation.id,
+            senderId: myId,
+            text: newMessage.message,
+            attachmentUrl: newMessage.attachmentUrl,
+            time: newMessage.createdAt,
+            isRead: false
         });
 
         res.json(newMessage);
@@ -309,3 +344,44 @@ export const sendMessageToUser = async (req: any, res: Response) => {
          res.status(500).json({ message: error.message });
      }
 }
+
+/**
+ * @desc    Mark all messages in a conversation as read
+ * @route   PUT /api/conversations/:id/read
+ */
+export const markConversationAsRead = async (req: any, res: Response) => {
+    try {
+        const conversationId = parseInt(req.params.id);
+        const userId = req.user.id;
+
+        await prisma.message.updateMany({
+            where: {
+                conversationId: conversationId,
+                isRead: false,
+                senderId: { not: userId } // Only mark incoming messages as read
+            },
+            data: {
+                isRead: true
+            }
+        });
+
+        const io = getIO();
+        const roomId = `conversation_${conversationId}`;
+        // Emit to the room so participants know? 
+        // Actually, we want to notify specific users that THEIR unread count changed.
+        // But for simplicity, emitting to the room works if the client listens to rooms they are part of.
+        // However, `Layout` might not join ALL conversation rooms.
+        // Usually, we join a global user room `user_{id}` for notifications.
+        // Let's assume for now we emit to the room, but `Layout` needs to know.
+        // `FloatingChat` / `Layout` usually listens to `receive_message` which might be broadcasted to user-specific channel?
+        // In `socket.ts` (backend), we usually join `user_{userId}`.
+        // Let's check socket implementation.
+        
+        io.to(roomId).emit('conversation_read', { conversationId, userId });
+        
+        res.json({ success: true });
+    } catch (error: any) {
+        console.error('Failed to mark as read:', error);
+        res.status(500).json({ message: error.message });
+    }
+};

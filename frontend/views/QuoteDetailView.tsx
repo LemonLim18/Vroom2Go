@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Quote, QuoteStatus, Shop } from '../types';
-import { MOCK_QUOTES, MOCK_SHOPS, getShopById } from '../constants';
+import { MOCK_QUOTES, getShopById } from '../constants';
 import { formatCurrency, getConfidenceLabel, calculateDeposit } from '../services/quoteService';
-import api from '../services/api';
 import {
   CheckCircle,
   XCircle,
@@ -12,12 +11,10 @@ import {
   Star,
   MapPin,
   FileText,
-  ChevronRight,
   Calendar,
   CreditCard,
   Info,
-  ArrowRight,
-  Loader2
+  ArrowRight
 } from 'lucide-react';
 
 interface QuoteDetailViewProps {
@@ -64,41 +61,9 @@ export const QuoteDetailView: React.FC<QuoteDetailViewProps> = ({
   const confidence = getConfidenceLabel(quote.confidence);
   const depositAmount = shop ? calculateDeposit(quote.estimatedTotal, shop.depositPercent) : 0;
 
-  const [showAcceptModal, setShowAcceptModal] = useState(false);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [bookingSuccess, setBookingSuccess] = useState(false);
-
-  const handleAccept = async () => {
-    if (!selectedDate || !selectedTime) return;
-    
-    setIsProcessing(true);
-    try {
-      // Accept the quote
-      await api.put(`/quotes/${quote.id}/accept`);
-      
-      // Create booking with the accepted quote
-      await api.post('/bookings', {
-        shopId: quote.shopId,
-        vehicleId: quote.vehicleId,
-        quoteId: quote.id,
-        scheduledDate: selectedDate,
-        scheduledTime: `${selectedDate}T${selectedTime}:00`,
-        method: 'DROP_OFF',
-        notes: `Booking from accepted quote #${quote.id}`
-      });
-      
-      setBookingSuccess(true);
-      setTimeout(() => {
-        setShowAcceptModal(false);
-        onAccept?.(quote);
-      }, 2000);
-    } catch (error) {
-      console.error('Failed to accept quote/create booking:', error);
-    } finally {
-      setIsProcessing(false);
-    }
+  // Simplified handleAccept: just trigger the prop to navigate to BookingView
+  const handleProceed = () => {
+    onAccept?.(quote);
   };
 
   if (!quote) {
@@ -304,10 +269,10 @@ export const QuoteDetailView: React.FC<QuoteDetailViewProps> = ({
           {(quote.status === QuoteStatus.QUOTED || quote.status === QuoteStatus.PENDING) && (
             <div className="space-y-3">
               <button 
-                onClick={() => setShowAcceptModal(true)}
+                onClick={handleProceed}
                 className="btn btn-primary btn-lg w-full rounded-xl gap-2"
               >
-                Accept Quote <ArrowRight className="w-5 h-5" />
+                Accept & Book Service <ArrowRight className="w-5 h-5" />
               </button>
               <button 
                 onClick={() => onReject?.(quote)}
@@ -334,96 +299,8 @@ export const QuoteDetailView: React.FC<QuoteDetailViewProps> = ({
           )}
         </div>
       </div>
-
-      {/* Accept & Book Modal */}
-      {showAcceptModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
-            {bookingSuccess ? (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-8 h-8 text-white" />
-                </div>
-                <h2 className="text-2xl font-bold mb-2">Booking Confirmed!</h2>
-                <p className="text-slate-400">Your service is scheduled. We'll notify you with updates.</p>
-              </div>
-            ) : (
-              <>
-                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                  <Calendar className="w-6 h-6 text-primary" /> Schedule Your Service
-                </h2>
-                <p className="text-slate-400 mb-6">
-                  Select your preferred date and time for service at <span className="text-white font-bold">{shop?.name}</span>.
-                </p>
-                
-                {/* Date & Time Selection */}
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <label className="label text-xs uppercase font-bold text-slate-500">Preferred Date</label>
-                    <input 
-                      type="date" 
-                      className="input bg-slate-800 border-white/10 w-full rounded-xl"
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
-                  <div>
-                    <label className="label text-xs uppercase font-bold text-slate-500">Preferred Time</label>
-                    <select 
-                      className="select bg-slate-800 border-white/10 w-full rounded-xl"
-                      value={selectedTime}
-                      onChange={(e) => setSelectedTime(e.target.value)}
-                    >
-                      <option value="">Select a time slot</option>
-                      <option value="09:00">9:00 AM</option>
-                      <option value="10:00">10:00 AM</option>
-                      <option value="11:00">11:00 AM</option>
-                      <option value="13:00">1:00 PM</option>
-                      <option value="14:00">2:00 PM</option>
-                      <option value="15:00">3:00 PM</option>
-                      <option value="16:00">4:00 PM</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Quote Summary */}
-                <div className="glass-card rounded-xl p-4 mb-6 border border-white/5">
-                  <div className="flex justify-between mb-2">
-                    <span className="text-slate-400">Estimated Total</span>
-                    <span className="font-bold">{formatCurrency(quote.estimatedTotal)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Required Deposit</span>
-                    <span className="font-bold text-primary">{formatCurrency(depositAmount)}</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => setShowAcceptModal(false)}
-                    className="btn btn-ghost flex-1"
-                    disabled={isProcessing}
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={handleAccept}
-                    className="btn btn-primary flex-1 gap-2"
-                    disabled={!selectedDate || !selectedTime || isProcessing}
-                  >
-                    {isProcessing ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
-                    ) : (
-                      <>Confirm Booking</>
-                    )}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      
+      {/* Moved to BookingView: Date/Time selection modal is no longer needed here */}
     </div>
   );
 };
