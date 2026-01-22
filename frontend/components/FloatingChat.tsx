@@ -116,7 +116,13 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ onOpenChat, onViewAl
     conv.shop.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleConversationClick = (conv: ConversationDisplay) => {
+  const handleConversationClick = async (conv: ConversationDisplay) => {
+    // Mark conversation as read when opening
+    try {
+      await api.put(`/conversations/${conv.id}/read`);
+    } catch (error) {
+      console.error('Failed to mark conversation as read', error);
+    }
     onOpenChat(conv.shop);
     setIsOpen(false);
   };

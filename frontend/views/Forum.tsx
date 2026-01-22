@@ -39,6 +39,7 @@ type SortType = 'hot' | 'new' | 'top';
 
 export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
   const [posts, setPosts] = useState<ForumPost[]>([]);
+  const [currentUser, setCurrentUser] = useState<{ id: number; name: string } | null>(null);
   
   // Create Post State
   const [newPostContent, setNewPostContent] = useState('');
@@ -80,6 +81,8 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
 
   useEffect(() => {
     fetchPosts();
+    // Fetch current user
+    api.get('/auth/me').then(res => setCurrentUser(res.data)).catch(() => {});
   }, []);
 
   // Trending topics extracted from posts
@@ -578,7 +581,8 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
                             </div>
                         </div>
                         
-                        {/* Post Actions Dropdown (Only for author, mocked check) */}
+                        {/* Post Actions Dropdown (Only for author) */}
+                        {currentUser && (post as any).authorId === currentUser.id && (
                         <div className="dropdown dropdown-end">
                             <label tabIndex={0} className="btn btn-ghost btn-circle btn-sm">
                                 <MoreHorizontal className="w-4 h-4" />
@@ -588,6 +592,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
                                 <li><a onClick={() => handleDeletePost(post.id)} className="text-red-400 hover:text-red-300"><X className="w-4 h-4" /> Delete Post</a></li>
                             </ul>
                         </div>
+                        )}
                     </div>
                   
                     {/* Content */}
@@ -755,7 +760,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Trending Topics */}
-          <div className="glass-card rounded-2xl p-5 border border-white/5 sticky top-24">
+          <div className="glass-card rounded-2xl p-5 border border-white/5">
             <h3 className="font-bold flex items-center gap-2 mb-4">
               <Flame className="w-5 h-5 text-orange-400" />
               Trending Topics

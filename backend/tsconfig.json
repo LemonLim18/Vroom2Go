@@ -16,6 +16,6 @@
     "moduleResolution": "node",
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": ["src/**/*", "prisma/seed.ts"],
+  "include": ["src/**/*", "prisma/seed.ts", "add_services.ts", "test_messaging.ts", "audit_data_v2.ts"],
   "exclude": ["node_modules", "dist"]
 }

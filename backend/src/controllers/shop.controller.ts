@@ -146,7 +146,7 @@ export const updateShopProfile = async (req: any, res: Response) => {
  */
 export const getMyShop = async (req: any, res: Response) => {
   try {
-    const shop = await prisma.shop.findUnique({
+    const shopRaw = await prisma.shop.findUnique({
       where: { userId: req.user.id },
       include: {
         hours: true,
@@ -156,15 +156,30 @@ export const getMyShop = async (req: any, res: Response) => {
             service: true
           }
         },
+        reviews: {
+          select: { rating: true }
+        },
         _count: {
           select: { reviews: true }
         }
       }
     });
 
-    if (!shop) {
+    if (!shopRaw) {
       return res.status(404).json({ message: 'Shop profile not found' });
     }
+
+    // Calculate real dynamic rating from reviews
+    const reviewCount = shopRaw._count.reviews;
+    const avgRating = reviewCount > 0 
+      ? shopRaw.reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount 
+      : 0;
+
+    const shop = {
+      ...shopRaw,
+      rating: avgRating || Number(shopRaw.rating),
+      reviewCount: reviewCount
+    };
 
     res.json(shop);
   } catch (error: any) {
@@ -214,6 +229,14 @@ export const getShopAnalytics = async (req: any, res: Response) => {
       where: {
         shopId: shop.id,
         status: 'PENDING'
+      }
+    });
+
+    // Completed Bookings count
+    const completedBookingsCount = await prisma.booking.count({
+      where: {
+        shopId: shop.id,
+        status: 'COMPLETED'
       }
     });
 
@@ -274,6 +297,7 @@ export const getShopAnalytics = async (req: any, res: Response) => {
       weeklyRevenue,
       newBookings: newBookingsCount,
       pendingBookings: pendingBookingsCount,
+      completedBookings: completedBookingsCount,
       avgResponseMinutes,
       rating: Number(shop.rating),
       reviewCount: shop.reviewCount,

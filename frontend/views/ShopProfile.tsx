@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Shop, Service, ServiceCategory } from '../types';
-import { MOCK_SERVICES } from '../constants';
 import api from '../services/api';
 import { 
   ShieldCheck, 
@@ -39,8 +38,6 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
   const [reviews, setReviews] = useState<any[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
 
-  const getServiceDetails = (id: string) => MOCK_SERVICES.find(s => s.id === id);
-
   // Group services by category
   const servicesByCategory = useMemo(() => {
     const grouped: Record<string, { service: Service; price: string }[]> = {};
@@ -51,8 +48,8 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
             let price = 'Quote';
 
             if (typeof shopService === 'string') {
-                service = getServiceDetails(shopService);
-                price = shop.customPrices?.[shopService] || 'Quote';
+                // Legacy string ID - skip, no longer supported without mock data
+                return;
             } else if (shopService.service) {
                 // Transform backend service structure to frontend type
                 const s = shopService.service;

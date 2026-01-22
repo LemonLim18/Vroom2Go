@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
+import { themeConfig } from '../utils/alerts';
 import { UserRole, Shop } from '../types';
-import { MOCK_SHOPS, MOCK_BOOKINGS, MOCK_USERS } from '../constants';
+import api from '../services/api';
 import {
   ShieldCheck,
   ShieldX,
@@ -30,40 +31,17 @@ interface AdminConsoleProps {
 
 type AdminTab = 'overview' | 'verification' | 'disputes' | 'users';
 
-// Mock pending verification shops
-const PENDING_SHOPS = [
-  {
-    id: 'pending1',
-    name: 'Quick Fix Garage',
-    address: '555 Oak Street, Springfield',
-    submittedAt: '2024-01-20',
-    documents: ['Business License', 'Insurance'],
-    contact: 'bob@quickfix.com',
-    status: 'pending' as const,
-  },
-  {
-    id: 'pending2',
-    name: 'Elite Auto Works',
-    address: '789 Maple Ave, Springfield',
-    submittedAt: '2024-01-18',
-    documents: ['Business License', 'Insurance', 'ASE Certification'],
-    contact: 'info@eliteauto.com',
-    status: 'pending' as const,
-  },
-];
-
-// Mock disputes
-const MOCK_DISPUTES = [
-  {
-    id: 'd1',
-    bookingId: 'b2',
-    userId: 'user1',
-    shopId: 'shop1',
-    reason: 'Final invoice 25% higher than quote',
-    status: 'open' as const,
-    createdAt: '2024-01-15',
-  },
-];
+// Types for API data
+interface AdminStats {
+  totalUsers: number;
+  totalShops: number;
+  verifiedShops: number;
+  pendingVerifications: number;
+  totalBookings: number;
+  completedBookings: number;
+  openDisputes: number;
+  revenue: number;
+}
 
 export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -76,6 +54,43 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [contactMessage, setContactMessage] = useState('');
   const [contactRecipients, setContactRecipients] = useState({ user: true, shop: true });
+  const [loading, setLoading] = useState(true);
+  
+  // Real data from API
+  const [stats, setStats] = useState<AdminStats>({
+    totalUsers: 0, totalShops: 0, verifiedShops: 0, pendingVerifications: 0,
+    totalBookings: 0, completedBookings: 0, openDisputes: 0, revenue: 0
+  });
+  const [users, setUsers] = useState<any[]>([]);
+  const [pendingShops, setPendingShops] = useState<any[]>([]);
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [recentBookings, setRecentBookings] = useState<any[]>([]);
+
+  // Fetch admin data on mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [statsRes, usersRes, shopsRes, disputesRes, bookingsRes] = await Promise.all([
+          api.get('/admin/stats'),
+          api.get('/admin/users'),
+          api.get('/admin/shops/pending'),
+          api.get('/admin/disputes'),
+          api.get('/admin/bookings/recent')
+        ]);
+        setStats(statsRes.data);
+        setUsers(usersRes.data);
+        setPendingShops(shopsRes.data);
+        setDisputes(disputesRes.data);
+        setRecentBookings(bookingsRes.data);
+      } catch (error) {
+        console.error('Failed to fetch admin data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   // Show toast notification
   const showToast = (message: string) => {
@@ -93,13 +108,29 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
     setContactMessage('');
   };
 
-  const stats = {
-    totalUsers: MOCK_USERS.length,
-    totalShops: MOCK_SHOPS.filter(s => s.verified).length,
-    pendingVerifications: PENDING_SHOPS.length,
-    openDisputes: MOCK_DISPUTES.filter(d => d.status === 'open').length,
-    totalBookings: MOCK_BOOKINGS.length,
-    revenue: MOCK_BOOKINGS.reduce((sum, b) => sum + b.estimatedTotal, 0),
+  // Handle verify shop
+  const handleVerifyShop = async (shopId: number, verified: boolean) => {
+    try {
+      await api.put(`/admin/shops/${shopId}/verify`, { verified });
+      setPendingShops(prev => prev.filter(s => s.id !== shopId));
+      setStats(prev => ({ ...prev, pendingVerifications: prev.pendingVerifications - 1 }));
+      showToast(verified ? 'Shop approved!' : 'Shop rejected');
+    } catch (error) {
+      console.error('Failed to verify shop:', error);
+    }
+  };
+
+  // Handle resolve dispute
+  const handleResolveDispute = async (disputeId: number, resolution: string) => {
+    try {
+      await api.put(`/admin/disputes/${disputeId}/resolve`, { resolution, status: 'RESOLVED' });
+      setDisputes(prev => prev.map(d => d.id === disputeId ? { ...d, status: 'RESOLVED' } : d));
+      setStats(prev => ({ ...prev, openDisputes: prev.openDisputes - 1 }));
+      showToast('Dispute resolved');
+      setShowDisputeModal(false);
+    } catch (error) {
+      console.error('Failed to resolve dispute:', error);
+    }
   };
 
   const tabs = [
@@ -230,13 +261,13 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                 Recent Activity
               </h3>
               <div className="space-y-3">
-                {MOCK_BOOKINGS.slice(0, 3).map(booking => (
+                {recentBookings.slice(0, 3).map((booking: any) => (
                   <div key={booking.id} className="flex items-center gap-3 text-sm">
                     <div className={`w-2 h-2 rounded-full ${
-                      booking.status === 'Completed' ? 'bg-green-400' : 'bg-blue-400'
+                      booking.status === 'COMPLETED' ? 'bg-green-400' : 'bg-blue-400'
                     }`} />
-                    <span className="flex-1 truncate">{booking.serviceName}</span>
-                    <span className="text-slate-500">{booking.shopName}</span>
+                    <span className="flex-1 truncate">{booking.service?.name || 'Service'}</span>
+                    <span className="text-slate-500">{booking.shop?.name || 'Shop'}</span>
                   </div>
                 ))}
               </div>
@@ -264,7 +295,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
             </div>
           </div>
 
-          {PENDING_SHOPS.length === 0 ? (
+          {pendingShops.length === 0 ? (
             <div className="glass-card rounded-2xl p-12 text-center border border-white/5">
               <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
               <h3 className="text-xl font-bold mb-2">All Caught Up!</h3>
@@ -272,7 +303,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
             </div>
           ) : (
             <div className="space-y-4">
-              {PENDING_SHOPS.map(shop => (
+              {pendingShops.map((shop: any) => (
                 <div key={shop.id} className="glass-card rounded-2xl p-6 border border-white/5">
                   <div className="flex items-start justify-between mb-4">
                     <div>
@@ -297,15 +328,12 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                     </button>
                     <button onClick={() => {
                         Swal.fire({
+                          ...themeConfig,
                           title: 'Approve Shop?',
                           text: `${shop.name} will be verified and listed publicly.`,
                           icon: 'question',
                           showCancelButton: true,
-                          confirmButtonColor: '#22c55e', // Green
-                          cancelButtonColor: '#1e293b',
                           confirmButtonText: 'Approve Verification',
-                          background: '#0f172a',
-                          color: '#fff'
                         }).then((result) => {
                           if (result.isConfirmed) {
                              showToast(`${shop.name} has been approved!`);
@@ -316,15 +344,13 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                     </button>
                     <button onClick={() => {
                         Swal.fire({
+                          ...themeConfig,
                           title: 'Reject Application?',
                           text: `Rejecting ${shop.name} cannot be undone easily.`,
                           icon: 'warning',
                           showCancelButton: true,
-                          confirmButtonColor: '#ef4444', // Red
-                          cancelButtonColor: '#1e293b',
+                          confirmButtonColor: '#ef4444', // Red for rejection
                           confirmButtonText: 'Yes, Reject',
-                          background: '#0f172a',
-                          color: '#fff'
                         }).then((result) => {
                           if (result.isConfirmed) {
                              showToast(`${shop.name} has been rejected`);
@@ -356,7 +382,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
             </div>
           </div>
 
-          {MOCK_DISPUTES.length === 0 ? (
+          {disputes.filter((d: any) => d.status === 'OPEN').length === 0 ? (
             <div className="glass-card rounded-2xl p-12 text-center border border-white/5">
               <ShieldCheck className="w-12 h-12 text-green-400 mx-auto mb-4" />
               <h3 className="text-xl font-bold mb-2">No Disputes</h3>
@@ -364,32 +390,29 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
             </div>
           ) : (
             <div className="space-y-4">
-              {MOCK_DISPUTES.map(dispute => (
-                <div key={dispute.id} className="glass-card rounded-2xl p-6 border border-red-500/20">
+              {disputes.filter((d: any) => d.status === 'OPEN').map((dispute: any) => (
+                <div key={dispute.id} className="glass-card rounded-2xl p-6 border border-white/5">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h3 className="font-bold flex items-center gap-2">
-                        <AlertTriangle className="w-5 h-5 text-red-400" />
-                        Dispute #{dispute.id.toUpperCase()}
-                      </h3>
-                      <p className="text-sm text-slate-400 mt-1">{dispute.reason}</p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="badge badge-error badge-sm uppercase">#{dispute.id}</span>
+                        <span className={`badge badge-sm ${dispute.status === 'OPEN' ? 'badge-warning' : 'badge-ghost'}`}>
+                          {dispute.status}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-bold">{dispute.reason}</h3>
                     </div>
-                    <span className={`badge ${
-                      dispute.status === 'open' ? 'badge-error' : 
-                      dispute.status === 'under_review' ? 'badge-warning' : 'badge-success'
-                    }`}>
-                      {dispute.status}
-                    </span>
+                    <span className="text-sm text-slate-500">{new Date(dispute.createdAt).toLocaleDateString()}</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                  <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
                     <div>
-                      <p className="text-slate-500">User</p>
-                      <p>User #{dispute.userId}</p>
+                      <span className="text-slate-500">Driver</span>
+                      <p>{dispute.user?.name || `User #${dispute.userId}`}</p>
                     </div>
                     <div>
-                      <p className="text-slate-500">Shop</p>
-                      <p>{MOCK_SHOPS.find(s => s.id === dispute.shopId)?.name}</p>
+                      <span className="text-slate-500">Shop</span>
+                      <p>{dispute.shop?.name || 'Unknown Shop'}</p>
                     </div>
                   </div>
 
@@ -402,15 +425,12 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                     </button>
                     <button onClick={() => {
                         Swal.fire({
+                          ...themeConfig,
                           title: 'Resolve Dispute?',
                           text: `Mark Dispute #${dispute.id.toUpperCase()} as resolved?`,
                           icon: 'info',
                           showCancelButton: true,
-                          confirmButtonColor: '#22c55e',
-                          cancelButtonColor: '#1e293b',
                           confirmButtonText: 'Confirm Resolution',
-                          background: '#0f172a',
-                          color: '#fff'
                         }).then((result) => {
                           if (result.isConfirmed) {
                             showToast(`Dispute #${dispute.id.toUpperCase()} resolved`);
@@ -457,12 +477,12 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                 </tr>
               </thead>
               <tbody>
-                {MOCK_USERS.map(user => (
+                {users.map((user: any) => (
                   <tr key={user.id}>
                     <td>
                       <div className="flex items-center gap-3">
-                        {user.avatar && (
-                          <img src={user.avatar} alt="" className="w-8 h-8 rounded-full" />
+                        {user.avatarUrl && (
+                          <img src={user.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
                         )}
                         <span className="font-medium">{user.name}</span>
                       </div>
@@ -629,7 +649,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({ onBack }) => {
                   />
                   <div>
                     <p className="font-medium text-sm">Mechanic Shop</p>
-                    <p className="text-xs text-slate-500">{MOCK_SHOPS.find(s => s.id === selectedItem.shopId)?.name}</p>
+                    <p className="text-xs text-slate-500">{selectedItem.shop?.name || 'Shop'}</p>
                   </div>
                 </label>
               </div>

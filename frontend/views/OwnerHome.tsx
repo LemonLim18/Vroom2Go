@@ -8,7 +8,7 @@ import { Service, Shop, DiagnosticPackage, Vehicle, CarType } from '../types';
 interface OwnerHomeProps {
   onServiceSelect: (service: Service) => void;
   onShopSelect: (shop: Shop) => void;
-  onNavigate?: (view: string) => void;
+  onNavigate?: (view: string, data?: any) => void;
 }
 
 // Promotions data
@@ -309,6 +309,9 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
           {diagnosticPackages.map((pkg) => (
             <div 
               key={pkg.id}
+              onClick={() => onNavigate?.('quote-request', { 
+                initialDescription: `I am interested in the ${pkg.name} package. ${pkg.description}` 
+              })}
               className="glass-card rounded-2xl p-5 border border-white/5 hover:border-primary/30 transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between mb-3">
@@ -334,17 +337,16 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
       </div>
 
       {/* Quick Categories */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         {[
           { name: 'Maintenance', icon: Gauge },
           { name: 'Repair', icon: Wrench },
-          { name: 'Diagnostics', icon: Zap },
-          { name: 'Pit Crew', icon: MapPin }
-        ].map((cat) => (
+          { name: 'Diagnostics', term: 'Diagnostic', icon: Zap }
+        ].map((cat: any) => (
           <div 
             key={cat.name} 
             className="group glass-card hover:bg-slate-800/80 transition-all cursor-pointer rounded-2xl p-6 border border-white/5 hover:border-primary/30 text-center"
-            onClick={() => setSearchTerm(cat.name)}
+            onClick={() => setSearchTerm(cat.term || cat.name)}
           >
             <cat.icon className="w-8 h-8 mx-auto mb-3 text-slate-500 group-hover:text-primary transition-colors" />
             <h3 className="font-black uppercase italic tracking-tighter">{cat.name}</h3>

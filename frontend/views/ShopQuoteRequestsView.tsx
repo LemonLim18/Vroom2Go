@@ -12,6 +12,7 @@ import {
   Car
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { themeConfig } from '../utils/alerts';
 
 interface ShopQuoteRequestsViewProps {
   onBack?: () => void;
@@ -75,11 +76,10 @@ export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ on
       });
       
       Swal.fire({
+        ...themeConfig,
         icon: 'success',
         title: 'Quote Sent!',
         text: 'The driver has been notified of your estimate.',
-        background: '#0f172a',
-        color: '#fff'
       });
       
       setSelectedRequest(null);
@@ -87,11 +87,11 @@ export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ on
       fetchRequests(); // Refresh - request will move to 'responded' tab
     } catch (error: any) {
       Swal.fire({
+        ...themeConfig,
         icon: 'error',
         title: 'Failed to send quote',
         text: error.response?.data?.message || 'Unknown error',
-        background: '#0f172a',
-        color: '#fff'
+        confirmButtonColor: '#ef4444',
       });
     }
   };

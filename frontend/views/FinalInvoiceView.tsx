@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Invoice, Booking, JobStatus } from '../types';
-import { MOCK_INVOICES, MOCK_BOOKINGS, getShopById } from '../constants';
 import { formatCurrency, calculateVariance, isVarianceOverTolerance } from '../services/quoteService';
 import api from '../services/api';
 import {
@@ -40,6 +39,7 @@ export const FinalInvoiceView: React.FC<FinalInvoiceViewProps> = ({
   onRateShop,
 }) => {
   const [invoice, setInvoice] = useState<Invoice | null>(propInvoice || null);
+  const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(!propInvoice);
   const [error, setError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -66,22 +66,22 @@ export const FinalInvoiceView: React.FC<FinalInvoiceViewProps> = ({
         if (bookingId) {
           const { data } = await api.get(`/invoices/booking/${bookingId}`);
           setInvoice(data);
+          // Booking data is included in invoice response
+          if (data.booking) {
+            setBooking(data.booking);
+          }
         } else if (invoiceId) {
-          // Fallback to mock data for demo
-          const mockInvoice = MOCK_INVOICES.find(i => i.id === invoiceId) || MOCK_INVOICES[0];
-          setInvoice(mockInvoice);
+          const { data } = await api.get(`/invoices/${invoiceId}`);
+          setInvoice(data);
+          if (data.booking) {
+            setBooking(data.booking);
+          }
         } else {
-          // No ID provided, use first mock
-          setInvoice(MOCK_INVOICES[0]);
+          setError('No invoice ID provided');
         }
       } catch (err: any) {
         console.error('Failed to fetch invoice:', err);
-        // Fallback to mock data
-        const mockInvoice = invoiceId 
-          ? MOCK_INVOICES.find(i => i.id === invoiceId) || MOCK_INVOICES[0]
-          : MOCK_INVOICES[0];
-        setInvoice(mockInvoice);
-        setError(null); // Don't show error if we have fallback
+        setError('Failed to load invoice');
       } finally {
         setLoading(false);
       }
@@ -90,9 +90,8 @@ export const FinalInvoiceView: React.FC<FinalInvoiceViewProps> = ({
     fetchInvoice();
   }, [bookingId, invoiceId, propInvoice]);
 
-  // Get related booking data (from invoice or fallback to mock)
-  const booking = invoice ? MOCK_BOOKINGS.find(b => b.id === invoice.bookingId) : null;
-  const shop = booking ? getShopById(booking.shopId) : (invoice as any)?.shop || null;
+  // Get shop from booking or invoice
+  const shop = booking?.shop || (invoice as any)?.shop || (invoice as any)?.booking?.shop || null;
 
   // Calculate variance from original quote
   const originalQuoteTotal = booking?.estimatedTotal || 0;

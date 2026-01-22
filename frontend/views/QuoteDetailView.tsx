@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Quote, QuoteStatus, Shop } from '../types';
-import { MOCK_QUOTES, getShopById } from '../constants';
 import { formatCurrency, getConfidenceLabel, calculateDeposit } from '../services/quoteService';
+import api from '../services/api';
 import {
   CheckCircle,
   XCircle,
@@ -56,15 +56,46 @@ export const QuoteDetailView: React.FC<QuoteDetailViewProps> = ({
   onReject,
   onCompare,
 }) => {
-  const quote = propQuote || MOCK_QUOTES.find(q => q.id === quoteId) || MOCK_QUOTES[0];
-  const shop = getShopById(quote.shopId);
-  const confidence = getConfidenceLabel(quote.confidence);
-  const depositAmount = shop ? calculateDeposit(quote.estimatedTotal, shop.depositPercent) : 0;
+  const [quote, setQuote] = useState<Quote | null>(propQuote || null);
+  const [loading, setLoading] = useState(!propQuote && !!quoteId);
+  
+  useEffect(() => {
+    if (propQuote) {
+      setQuote(propQuote);
+      return;
+    }
+    if (!quoteId) return;
 
-  // Simplified handleAccept: just trigger the prop to navigate to BookingView
+    const fetchQuote = async () => {
+      try {
+        setLoading(true);
+        const { data } = await api.get(`/quotes/${quoteId}`);
+        setQuote(data);
+      } catch (err) {
+        console.error('Failed to fetch quote:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchQuote();
+  }, [quoteId, propQuote]);
+
+  const shop = (quote as any)?.shop || null;
+  const confidence = quote ? getConfidenceLabel(quote.confidence) : null;
+  const depositAmount = shop && quote ? calculateDeposit(quote.estimatedTotal, shop.depositPercent || 25) : 0;
+
   const handleProceed = () => {
-    onAccept?.(quote);
+    if (quote) onAccept?.(quote);
   };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <span className="loading loading-bars loading-lg text-primary"></span>
+        <p className="mt-4 text-slate-500">Loading Quote...</p>
+      </div>
+    );
+  }
 
   if (!quote) {
     return (

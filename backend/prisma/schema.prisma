@@ -144,6 +144,8 @@ enum NotificationType {
   REVIEW
   PAYMENT
   SYSTEM
+  SHOP_VERIFIED
+  DISPUTE_RESOLVED
 }
 
 // Models
@@ -230,11 +232,31 @@ model Shop {
   conversations  Conversation[]      @relation("ShopConversations")
   comments       Comment[]
   disputes       Dispute[]
+  timeSlots      TimeSlot[]
 
   @@index([verified])
   @@index([latitude, longitude])
   @@index([rating(sort: Desc)])
   @@map("shops")
+}
+
+// Time slots for shop availability (bus-ticket-style booking)
+model TimeSlot {
+  id        Int      @id @default(autoincrement())
+  shopId    Int      @map("shop_id")
+  date      DateTime @db.Date
+  startTime DateTime @map("start_time") @db.Time
+  endTime   DateTime @map("end_time") @db.Time
+  isBooked  Boolean  @default(false) @map("is_booked")
+  bookingId Int?     @unique @map("booking_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  shop    Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id])
+
+  @@unique([shopId, date, startTime])
+  @@index([shopId, date])
+  @@map("time_slots")
 }
 
 model ShopHour {
@@ -464,6 +486,7 @@ model Booking {
   reviews      Review[]
   disputes     Dispute[]
   conversation Conversation? @relation("BookingConversation")
+  timeSlot     TimeSlot?
 
   @@index([status])
   @@index([scheduledDate])

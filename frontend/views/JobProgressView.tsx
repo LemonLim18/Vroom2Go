@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Booking, JobStatus, Shop } from '../types';
-import { MOCK_BOOKINGS, MOCK_SHOPS, getShopById } from '../constants';
 import { formatCurrency } from '../services/quoteService';
+import api from '../services/api';
 import {
   Clock,
   CheckCircle,
@@ -35,7 +35,6 @@ const JOB_STEPS: { status: JobStatus; label: string; icon: React.ReactNode }[] =
 ];
 
 const getStepIndex = (status: JobStatus): number => {
-  // Handle "Waiting Parts" as between "In Progress" and "Completed"
   const index = JOB_STEPS.findIndex(s => s.status === status);
   return index >= 0 ? index : 0;
 };
@@ -47,16 +46,44 @@ export const JobProgressView: React.FC<JobProgressViewProps> = ({
   onChat,
   onViewInvoice,
 }) => {
-  const booking = propBooking || MOCK_BOOKINGS.find(b => b.id === bookingId) || MOCK_BOOKINGS[0];
-  const shop = getShopById(booking.shopId);
-  const currentStepIndex = getStepIndex(booking.jobStatus);
+  const [booking, setBooking] = useState<any>(propBooking || null);
+  const [loading, setLoading] = useState(!propBooking);
+  const [error, setError] = useState<string | null>(null);
   
-  // Mock progress updates
-  const [updates] = useState([
-    { time: '10:05 AM', message: 'Vehicle checked in at shop', type: 'info' },
-    { time: '10:30 AM', message: 'Technician started inspection', type: 'info' },
-    { time: '11:15 AM', message: 'Front brake pads confirmed worn, beginning replacement', type: 'progress' },
-  ]);
+  // Fetch booking data from API
+  useEffect(() => {
+    if (propBooking) {
+      setBooking(propBooking);
+      setLoading(false);
+      return;
+    }
+    
+    if (!bookingId) {
+      setError('No booking ID provided');
+      setLoading(false);
+      return;
+    }
+
+    const fetchBooking = async () => {
+      try {
+        setLoading(true);
+        const { data } = await api.get(`/bookings/${bookingId}`);
+        setBooking(data);
+      } catch (err) {
+        console.error('Failed to fetch booking:', err);
+        setError('Failed to load booking');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchBooking();
+  }, [bookingId, propBooking]);
+
+  const shop = booking?.shop || null;
+  const currentStepIndex = booking ? getStepIndex(booking.jobStatus || booking.status) : 0;
+  
+  // Job updates from API or empty
+  const [updates] = useState<any[]>(booking?.jobUpdates || []);
 
   if (!booking) {
     return (

@@ -18,6 +18,8 @@ import reviewRoutes from './routes/review.routes';
 import invoiceRoutes from './routes/invoice.routes';
 import notificationRoutes from './routes/notification.routes';
 import diagnosticPackageRoutes from './routes/diagnosticPackage.routes';
+import availabilityRoutes from './routes/availability.routes';
+import adminRoutes from './routes/admin.routes';
 
 const app: Application = express();
 
@@ -72,6 +74,8 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/diagnostic-packages', diagnosticPackageRoutes);
+app.use('/api', availabilityRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

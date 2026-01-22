@@ -30,6 +30,7 @@ export const getPosts = async (req: any, res: Response) => {
     // Transform for frontend
     const formattedPosts = posts.map(post => ({
       id: post.id,
+      authorId: post.userId, // Include author's user ID for ownership check
       author: post.author.name,
       authorRole: post.author.role,
       title: post.title,

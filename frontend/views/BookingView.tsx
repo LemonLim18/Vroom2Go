@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { Shop, Service, Vehicle, BookingMethod, Quote } from '../types';
-import { MOCK_SERVICES } from '../constants';
 import { 
   Calendar, 
   Car, 
@@ -72,6 +71,30 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  // Time slots from shop availability
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Fetch available slots when date changes
+  useEffect(() => {
+    if (!selectedDate || !shop.id) return;
+    const fetchSlots = async () => {
+      setLoadingSlots(true);
+      setSelectedTime(''); // Reset time when date changes
+      try {
+        const { data } = await api.get(`/shops/${shop.id}/availability?date=${selectedDate}`);
+        // Only show slots that are NOT booked
+        setAvailableSlots(data.filter((s: any) => !s.isBooked));
+      } catch (error) {
+        console.error('Failed to fetch available slots', error);
+        setAvailableSlots([]);
+      } finally {
+        setLoadingSlots(false);
+      }
+    };
+    fetchSlots();
+  }, [selectedDate, shop.id]);
+
   useEffect(() => {
     const fetchVehicles = async () => {
       try {
@@ -109,7 +132,18 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const selectedService = MOCK_SERVICES.find(s => s.id === selectedServiceId);
+  // Get service from shop's services array (handles ShopService with nested service object)
+  const selectedService = (() => {
+    if (!shop.services || !Array.isArray(shop.services)) return null;
+    const found = (shop.services as any[]).find((s) => {
+      if (typeof s === 'object' && s !== null && s.service) {
+        return String(s.service.id) === String(selectedServiceId) || String(s.id) === String(selectedServiceId);
+      }
+      return typeof s === 'object' && s !== null && String(s.id) === String(selectedServiceId);
+    });
+    if (!found) return null;
+    return found.service || found;
+  })();
 
   // PRICING LOGIC
   let basePrice = 0;
@@ -204,9 +238,8 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
               quote: { totalEstimate: totalPrice }
           };
 
-          // Save to localStorage so MyBookingsView can find it
-          const existing = JSON.parse(localStorage.getItem('vroom_mock_bookings') || '[]');
-          localStorage.setItem('vroom_mock_bookings', JSON.stringify([mockBooking, ...existing]));
+          // Booking created via API mock fallback
+          console.log('Mock booking created:', mockBooking);
 
           await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
           setIsSuccess(true);
@@ -363,15 +396,26 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                    <ChevronRight className="w-4 h-4" /> Service Date & Time
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <input type="date" className="input bg-slate-800/50 border-white/5 rounded-xl font-bold italic" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
-                  <select className="select bg-slate-800/50 border-white/5 rounded-xl font-bold italic" value={selectedTime} onChange={(e) => setSelectedTime(e.target.value)}>
-                    <option disabled value="">Select Available Time</option>
-                    <option>09:00 AM</option>
-                    <option>11:00 AM</option>
-                    <option>02:00 PM</option>
-                    <option>04:00 PM</option>
+                  <input type="date" className="input bg-slate-800/50 border-white/5 rounded-xl font-bold italic" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} min={new Date().toISOString().split('T')[0]} />
+                  <select 
+                    className="select bg-slate-800/50 border-white/5 rounded-xl font-bold italic" 
+                    value={selectedTime} 
+                    onChange={(e) => setSelectedTime(e.target.value)}
+                    disabled={loadingSlots || !selectedDate}
+                  >
+                    <option disabled value="">{loadingSlots ? 'Loading...' : selectedDate ? (availableSlots.length > 0 ? 'Select Available Time' : 'No slots available') : 'Select date first'}</option>
+                    {availableSlots.map(slot => {
+                      const time = new Date(slot.startTime);
+                      const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      return <option key={slot.id} value={slot.id}>{timeStr}</option>;
+                    })}
                   </select>
                 </div>
+                {selectedDate && !loadingSlots && availableSlots.length === 0 && (
+                  <p className="text-warning text-xs mt-2 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> No available slots for this date. Please try another date.
+                  </p>
+                )}
               </section>
 
               {/* Payment Method Section */}

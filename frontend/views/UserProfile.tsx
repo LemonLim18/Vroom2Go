@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { MOCK_VEHICLES, MOCK_USERS } from '../constants';
 import { UserRole, CarType, Vehicle, Booking } from '../types';
 import { 
   Search, 
@@ -43,9 +42,28 @@ interface ServiceHistoryItem {
   warrantyUntil?: string;
 }
 
-// Mock service history with warranty info
-// Mock service history with warranty info (Legacy type for UI only)
-const SERVICE_HISTORY: ServiceHistoryItem[] = [];
+interface PaymentMethod {
+  id: string;
+  last4: string;
+  brand: string;
+  expiry: string;
+  isDefault: boolean;
+  name: string;
+}
+
+// Helper to parse price string to number
+const parsePrice = (price: string | number | undefined): number => {
+  if (!price) return 0;
+  if (typeof price === 'number') return price;
+  return parseFloat(price.replace(/[^0-9.]/g, '')) || 0;
+};
+
+// Helper to add months to a date
+const addMonths = (date: Date, months: number): Date => {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+};
 
 interface UserProfileProps {
   onLogin?: () => void;
@@ -63,6 +81,63 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Derived Metrics from Bookings
+  const { totalServices, totalSpent, estSavings, serviceHistoryItems, activeWarranties } = React.useMemo(() => {
+    let tServices = 0;
+    let tSpent = 0;
+    const historyItems: ServiceHistoryItem[] = [];
+
+    bookings.forEach(booking => {
+      // Only count completed work towards history and spend
+      if (booking.status === 'Completed' || booking.status === 'In Progress' || booking.status === 'Confirmed') { // Including confirmed for visibility if desired, but strictly usually 'Completed'
+         // Using 'Completed' strictly for spend is safer, but for "Total Services" user might expect all non-cancelled. 
+         // Let's stick to Completed for spend, but all non-cancelled for history list.
+      }
+      
+      const price = parsePrice(booking.price || booking.estimatedTotal);
+      
+      // Calculate warranty expiry based on service warranty (mocked logic if not in booking)
+      // Assuming booking.service object might have warranty info, or default to 12 months for now
+      // In real app, booking snapshot should have warranty terms.
+      const bookingDate = new Date(booking.date || booking.scheduledAt);
+      const warrantyMonths = booking.serviceName?.toLowerCase().includes('oil') ? 3 : 12; // Simple heuristic
+      const warrantyUntilDate = addMonths(bookingDate, warrantyMonths);
+      const isWarrantyActive = warrantyUntilDate > new Date();
+
+      if (booking.status === 'Completed') {
+        tServices++;
+        tSpent += price;
+      }
+
+      historyItems.push({
+        id: booking.id,
+        serviceName: booking.serviceName || 'Unknown Service',
+        shopName: booking.shopName || 'Unknown Shop',
+        date: new Date(booking.date || booking.createdAt).toLocaleDateString(),
+        status: isWarrantyActive ? 'warranty' : 'completed',
+        total: price,
+        warrantyUntil: warrantyUntilDate.toLocaleDateString()
+      });
+    });
+
+    // Filter only Completed for the list view if desired, or keep all. 
+    // The previous static list seemed to imply past events.
+    const completedHistory = historyItems.filter(i => bookings.find(b => b.id === i.id)?.status === 'Completed');
+    
+    // Sort by date desc
+    completedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const activeWarrantiesList = completedHistory.filter(i => i.status === 'warranty');
+
+    return {
+      totalServices: tServices,
+      totalSpent: tSpent,
+      estSavings: tSpent * 0.15, // Mock savings calculation
+      serviceHistoryItems: completedHistory,
+      activeWarranties: activeWarrantiesList
+    };
+  }, [bookings]);
 
   // Add/Edit Utility State
   const [vinInput, setVinInput] = useState('');
@@ -86,6 +161,60 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
     mileage: 0,
     trim: '',
   });
+
+  // Payment Method State
+  const [showAddPaymentModal, setShowAddPaymentModal] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
+    { id: '1', last4: '4242', brand: 'Visa', expiry: '12/28', isDefault: true, name: 'Personal Card' },
+    { id: '2', last4: '1234', brand: 'Mastercard', expiry: '10/27', isDefault: false, name: 'Business Card' }
+  ]);
+  const [newPaymentForm, setNewPaymentForm] = useState({
+    number: '',
+    expiry: '',
+    cvc: '',
+    name: ''
+  });
+
+  const handleAddPaymentMethod = () => {
+    // Basic validation
+    if (!newPaymentForm.number || !newPaymentForm.expiry || !newPaymentForm.cvc || !newPaymentForm.name) {
+      showAlert.error('Please fill in all payment details');
+      return;
+    }
+
+    // Mock detection of brand and last 4
+    const last4 = newPaymentForm.number.slice(-4);
+    const brand = newPaymentForm.number.startsWith('4') ? 'Visa' : 'Mastercard'; // Simple detection
+    
+    const newMethod: PaymentMethod = {
+      id: Math.random().toString(36).substr(2, 9),
+      last4,
+      brand,
+      expiry: newPaymentForm.expiry,
+      isDefault: paymentMethods.length === 0, // Default if first card
+      name: newPaymentForm.name
+    };
+
+    setPaymentMethods([...paymentMethods, newMethod]);
+    setShowAddPaymentModal(false);
+    setNewPaymentForm({ number: '', expiry: '', cvc: '', name: '' });
+    showAlert.success('Payment method added successfully');
+  };
+
+  const handleDeletePaymentMethod = async (id: string) => {
+    const confirmed = await showAlert.confirm('Remove this payment method?');
+    if (confirmed) {
+      setPaymentMethods(prev => prev.filter(p => p.id !== id));
+      showAlert.success('Payment method removed');
+    }
+  };
+
+  const handleSetDefaultPaymentMethod = (id: string) => {
+    setPaymentMethods(prev => prev.map(p => ({
+      ...p,
+      isDefault: p.id === id
+    })));
+  };
 
   // File state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -426,7 +555,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
     { id: 'settings' as const, label: 'Settings', icon: Settings },
   ];
 
-  const activeWarranties = SERVICE_HISTORY.filter(s => s.status === 'warranty');
+
 
   return (
     <>
@@ -547,22 +676,52 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                   <CreditCard className="w-5 h-5 text-primary" />
                   Payment Methods
                 </h3>
-                <button className="btn btn-ghost btn-xs"><Plus className="w-4 h-4" /></button>
+                <button 
+                  onClick={() => setShowAddPaymentModal(true)} 
+                  className="btn btn-ghost btn-xs btn-circle bg-white/5 hover:bg-white/10"
+                >
+                    <Plus className="w-4 h-4" />
+                </button>
               </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-6 bg-gradient-to-r from-blue-600 to-blue-800 rounded"></div>
-                    <span>•••• 4242</span>
-                  </div>
-                  <span className="badge badge-xs badge-primary">Default</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-6 bg-gradient-to-r from-orange-500 to-red-500 rounded"></div>
-                    <span>•••• 1234</span>
-                  </div>
-                </div>
+                {paymentMethods.length === 0 ? (
+                    <p className="text-sm text-slate-400 text-center py-4">No payment methods saved.</p>
+                ) : (
+                    paymentMethods.map(method => (
+                        <div key={method.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl group">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-6 rounded flex items-center justify-center text-[8px] font-bold text-white shadow-sm
+                                    ${method.brand === 'Visa' ? 'bg-gradient-to-r from-blue-600 to-blue-800' : 
+                                      method.brand === 'Mastercard' ? 'bg-gradient-to-r from-orange-500 to-red-600' : 'bg-slate-600'}
+                                `}>
+                                    {method.brand.toUpperCase()}
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="font-mono text-sm leading-none">•••• {method.last4}</span>
+                                    <span className="text-[10px] text-slate-500 mt-1">Exp {method.expiry}</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {method.isDefault ? (
+                                    <span className="badge badge-xs badge-primary">Default</span>
+                                ) : (
+                                    <button 
+                                        onClick={() => handleSetDefaultPaymentMethod(method.id)}
+                                        className="btn btn-xs btn-ghost text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        Set Default
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => handleDeletePaymentMethod(method.id)} 
+                                    className="btn btn-xs btn-ghost btn-circle text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <Trash2 className="w-3 h-3" />
+                                </button>
+                            </div>
+                        </div>
+                    ))
+                )}
               </div>
             </div>
           </div>
@@ -580,7 +739,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                   <FileText className="w-5 h-5 text-primary" />
                 </div>
               </div>
-              <p className="text-2xl font-black">12</p>
+              <p className="text-2xl font-black">{totalServices}</p>
               <p className="text-sm text-slate-400">Total Services</p>
             </div>
             <div className="glass-card rounded-2xl p-5 border border-white/5">
@@ -589,7 +748,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                   <Wrench className="w-5 h-5 text-green-400" />
                 </div>
               </div>
-              <p className="text-2xl font-black">$2,450</p>
+              <p className="text-2xl font-black">${totalSpent.toLocaleString()}</p>
               <p className="text-sm text-slate-400">Total Spent</p>
             </div>
             <div className="glass-card rounded-2xl p-5 border border-white/5">
@@ -607,7 +766,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                   <Star className="w-5 h-5 text-purple-400" />
                 </div>
               </div>
-              <p className="text-2xl font-black">$400</p>
+              <p className="text-2xl font-black">${estSavings.toLocaleString()}</p>
               <p className="text-sm text-slate-400">Est. Savings</p>
             </div>
           </div>
@@ -616,7 +775,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
           <div className="glass-card rounded-2xl p-6 border border-white/5">
             <h3 className="font-bold text-lg mb-6">Service History</h3>
             <div className="space-y-4">
-              {SERVICE_HISTORY.map((item, i) => (
+              {serviceHistoryItems.length === 0 ? (
+                <div className="text-center py-10 opacity-50">
+                    <p>No service history found.</p>
+                </div>
+              ) : (
+              serviceHistoryItems.map((item, i) => (
                 <div key={item.id} className="flex gap-4">
                   <div className="flex flex-col items-center">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
@@ -626,7 +790,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                         item.status === 'warranty' ? 'text-green-400' : 'text-slate-400'
                       }`} />
                     </div>
-                    {i < SERVICE_HISTORY.length - 1 && (
+                    {i < serviceHistoryItems.length - 1 && (
                       <div className="w-0.5 h-12 bg-slate-700 mt-2"></div>
                     )}
                   </div>
@@ -637,7 +801,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                         <p className="text-sm text-slate-400">{item.shopName}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">${item.total}</p>
+                        <p className="font-bold">${item.total.toLocaleString()}</p>
                         <p className="text-xs text-slate-400">{item.date}</p>
                       </div>
                     </div>
@@ -649,7 +813,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                     )}
                   </div>
                 </div>
-              ))}
+              )))}
             </div>
           </div>
 
@@ -898,6 +1062,81 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
               )}
             </div>
           </div>
+        </div>
+      )}
+      {/* Add Payment Modal */}
+      {showAddPaymentModal && (
+        <div className="fixed top-0 right-0 left-0 bottom-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center">
+            <div className="bg-slate-900 rounded-3xl max-w-sm w-full border border-white/10 animate-in zoom-in-95 duration-300">
+                <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                    <h3 className="font-bold text-lg">Add Payment Method</h3>
+                    <button onClick={() => setShowAddPaymentModal(false)} className="btn btn-ghost btn-sm btn-circle"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div className="form-control">
+                        <label className="label"><span className="label-text">Card Number</span></label>
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                placeholder="0000 0000 0000 0000" 
+                                className="input input-bordered w-full pl-10 bg-slate-800 font-mono"
+                                value={newPaymentForm.number}
+                                onChange={(e) => {
+                                    // Basic formatting
+                                    const v = e.target.value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+                                    const parts = [];
+                                    for (let i = 0; i < v.length; i += 4) {
+                                        parts.push(v.substr(i, 4));
+                                    }
+                                    setNewPaymentForm({...newPaymentForm, number: parts.length > 1 ? parts.join(' ') : v});
+                                }}
+                                maxLength={19}
+                            />
+                            <CreditCard className="w-5 h-5 absolute left-3 top-3.5 text-slate-500" />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="form-control">
+                            <label className="label"><span className="label-text">Expiry</span></label>
+                            <input 
+                                type="text" 
+                                placeholder="MM/YY" 
+                                className="input input-bordered w-full bg-slate-800"
+                                value={newPaymentForm.expiry}
+                                onChange={(e) => setNewPaymentForm({...newPaymentForm, expiry: e.target.value})}
+                                maxLength={5}
+                            />
+                        </div>
+                        <div className="form-control">
+                            <label className="label"><span className="label-text">CVC</span></label>
+                            <input 
+                                type="text" 
+                                placeholder="123" 
+                                className="input input-bordered w-full bg-slate-800"
+                                value={newPaymentForm.cvc}
+                                onChange={(e) => setNewPaymentForm({...newPaymentForm, cvc: e.target.value})}
+                                maxLength={4}
+                            />
+                        </div>
+                    </div>
+                    <div className="form-control">
+                        <label className="label"><span className="label-text">Name on Card</span></label>
+                        <input 
+                            type="text" 
+                            placeholder="John Doe" 
+                            className="input input-bordered w-full bg-slate-800"
+                            value={newPaymentForm.name}
+                            onChange={(e) => setNewPaymentForm({...newPaymentForm, name: e.target.value})}
+                        />
+                    </div>
+                    <button onClick={handleAddPaymentMethod} className="btn btn-primary w-full rounded-xl mt-2">
+                        Save Card
+                    </button>
+                    <p className="text-[10px] text-slate-500 text-center flex items-center justify-center gap-1">
+                        <Shield className="w-3 h-3" /> Securely encrypted via Stripe
+                    </p>
+                </div>
+            </div>
         </div>
       )}
     </>

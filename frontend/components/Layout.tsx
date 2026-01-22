@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserRole, Shop } from '../types';
-import { Home, Search, Calendar, MessageSquare, User, ShieldCheck, Wrench, Menu, X, ChevronDown, FileText } from 'lucide-react';
+import { Home, Search, Calendar, MessageSquare, User, ShieldCheck, Wrench, Menu, X, ChevronDown, FileText, MoreHorizontal, Plus } from 'lucide-react';
 import { FloatingChat } from './FloatingChat';
 import { NotificationBell } from './NotificationBell';
 import api from '../services/api';
@@ -10,7 +10,7 @@ interface LayoutProps {
   currentRole: UserRole;
   onRoleChange: (role: UserRole) => void;
   currentView: string;
-  onNavigate: (view: string) => void;
+  onNavigate: (view: string, data?: any) => void;
   onOpenChat?: (shop: Shop) => void;
 }
 
@@ -168,6 +168,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
   ];
 
   const filteredNav = navItems.filter(item => item.roles.includes(currentRole));
+  // Split for responsive hidden logic
+  // First 4 items are primary, rest are secondary (hidden on medium screens)
+  const primaryItems = filteredNav.slice(0, 4);
+  const secondaryItems = filteredNav.slice(4);
 
   return (
     <div className="flex flex-col h-screen bg-base-200 overflow-hidden font-sans">
@@ -187,9 +191,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
           </button>
         </div>
         
-        {/* Desktop Menu */}
-        <div className="hidden md:flex flex-none gap-1">
-          {filteredNav.map((item) => (
+        {/* // Desktop Menu */}
+        <div className="hidden lg:flex flex-none gap-1">
+          {/* Primary Items: Always visible on MD+ */}
+          {primaryItems.map((item) => (
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
@@ -205,6 +210,62 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
               {currentView === item.id && <div className="absolute -bottom-4 left-0 w-full h-1 bg-primary rounded-t-full shadow-[0_0_10px_#FACC15]"></div>}
             </button>
           ))}
+
+          {/* Secondary Items: Visible on XL+ (Full Menu) */}
+          <div className="hidden xl:flex gap-1">
+            {secondaryItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => onNavigate(item.id)}
+                className={`btn btn-sm btn-ghost gap-2 normal-case font-semibold relative ${
+                  currentView === item.id ? 'text-primary' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <item.icon className={`w-4 h-4 ${currentView === item.id ? 'text-primary' : ''}`} />
+                {item.label}
+                {(item.badge ?? 0) > 0 && (
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.5)]"></span>
+                )}
+                {currentView === item.id && <div className="absolute -bottom-4 left-0 w-full h-1 bg-primary rounded-t-full shadow-[0_0_10px_#FACC15]"></div>}
+              </button>
+            ))}
+          </div>
+
+          {/* More Dropdown: Visible on LG, Hidden on XL (Partial Menu) */}
+          {secondaryItems.length > 0 && (
+            <div className="dropdown dropdown-end lg:flex xl:hidden">
+              <div tabIndex={0} role="button" className={`btn btn-sm btn-ghost gap-2 normal-case font-semibold ${
+                secondaryItems.some(item => item.id === currentView) ? 'text-primary' : 'text-slate-400 hover:text-white'
+              }`}>
+                {/* <Plus className="w-4 h-4" /> */}
+                <MoreHorizontal className="w-4 h-4" />
+                More
+                {secondaryItems.some(i => (i.badge ?? 0) > 0) && (
+                   <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.5)]"></span>
+                )}
+              </div>
+              <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow-2xl bg-slate-900 border border-white/5 rounded-xl w-52 mt-4">
+                {secondaryItems.map((item) => (
+                  <li key={item.id}>
+                    <button 
+                      onClick={() => onNavigate(item.id)}
+                      className={`${
+                        currentView === item.id 
+                          ? '!text-primary bg-slate-800 focus:bg-slate-800 focus:text-primary' 
+                          : 'text-slate-300 hover:bg-slate-800 hover:text-white focus:bg-slate-800 focus:text-white'
+                      }`}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      {item.label}
+                      {(item.badge ?? 0) > 0 && (
+                        <span className="badge badge-error badge-xs ml-auto"></span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           
           {/* Notification Bell */}
           <NotificationBell onNavigate={onNavigate} />
@@ -225,7 +286,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
         </div>
 
         {/* Mobile Menu Toggle */}
-        <div className="flex-none md:hidden">
+        <div className="flex-none lg:hidden">
             <button className="btn btn-square btn-ghost" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
               {isMobileMenuOpen ? <X /> : <Menu />}
               {totalUnread > 0 && !isMobileMenuOpen && (

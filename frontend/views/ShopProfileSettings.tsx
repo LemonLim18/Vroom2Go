@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import Swal from 'sweetalert2';
-import { MOCK_SHOPS, MOCK_SERVICES, MOCK_BOOKINGS } from '../constants';
 import api from '../services/api';
+import Swal from 'sweetalert2';
+import { themeConfig } from '../utils/alerts';
 import { ServiceCategory, Shop } from '../types';
 import { 
   Wrench, 
@@ -44,6 +44,11 @@ export const ShopProfileSettings: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [shop, setShop] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [reviews, setReviews] = useState<any[]>([]);
+  
+  // Service editing state
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [servicePrices, setServicePrices] = useState<Record<string, string>>({});
   
   // Shop form state
   const [shopData, setShopData] = useState({
@@ -95,13 +100,145 @@ export const ShopProfileSettings: React.FC = () => {
   // TODO: Fetch this from backend properly or parse from shop object
   const shopServices = shop?.services?.map((s: any) => s.service) || []; 
 
-  // Backend TODO: Implement stats 
-  const stats = {
+  // Initialize service prices from shop data
+  useEffect(() => {
+    if (shop?.services) {
+      const prices: Record<string, string> = {};
+      shop.services.forEach((s: any) => {
+        if (s.service?.id) {
+          prices[s.service.id] = s.customPrice ? `$${s.customPrice}` : 'Quote';
+        }
+      });
+      setServicePrices(prices);
+    }
+  }, [shop?.services]);
+
+  // Handle service price edit
+  const handleSaveServicePrice = async (serviceId: string) => {
+    try {
+      const priceValue = servicePrices[serviceId]?.replace(/[^0-9.]/g, '');
+      await api.put(`/shops/services/${serviceId}`, { 
+        customPrice: priceValue ? parseFloat(priceValue) : null 
+      });
+      Swal.fire({
+        ...themeConfig,
+        title: 'Price Updated!',
+        text: 'Service price has been updated.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      });
+      setEditingServiceId(null);
+    } catch (error) {
+      console.error('Failed to update service price', error);
+      Swal.fire({
+        ...themeConfig,
+        title: 'Update Failed',
+        text: 'Could not update service price.',
+        icon: 'error'
+      });
+    }
+  };
+
+  // Handle service removal
+  const handleRemoveService = async (serviceId: string, serviceName: string) => {
+    const result = await Swal.fire({
+      ...themeConfig,
+      title: 'Remove Service?',
+      text: `Are you sure you want to remove "${serviceName}" from your offerings?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      confirmButtonText: 'Yes, remove it'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await api.delete(`/shops/services/${serviceId}`);
+        // Refresh shop data
+        fetchShopData();
+        Swal.fire({
+          ...themeConfig,
+          title: 'Removed!',
+          text: 'Service has been removed from your offerings.',
+          icon: 'success',
+          timer: 1500,
+          showConfirmButton: false
+        });
+      } catch (error) {
+        console.error('Failed to remove service', error);
+        Swal.fire({
+          ...themeConfig,
+          title: 'Error',
+          text: 'Could not remove the service. Please try again.',
+          icon: 'error'
+        });
+      }
+    }
+  }; 
+
+  // Real stats from backend
+  const [stats, setStats] = useState({
     totalBookings: 0,
     completedJobs: 0,
     pendingJobs: 0,
     revenue: 0,
-  };
+  });
+
+  useEffect(() => {
+    if (!shop?.id) return;
+    const fetchStats = async () => {
+      try {
+        const { data } = await api.get('/shops/analytics');
+        setStats({
+          totalBookings: data.newBookings || 0,
+          completedJobs: data.completedBookings || 0,
+          pendingJobs: data.pendingBookings || 0,
+          revenue: data.weeklyRevenue || 0,
+        });
+      } catch (error) {
+        console.error('Failed to fetch shop stats', error);
+      }
+    };
+    fetchStats();
+  }, [shop?.id]);
+
+  // Fetch reviews for rating breakdown
+  useEffect(() => {
+    if (!shop?.id) return;
+    const fetchReviews = async () => {
+      try {
+        const { data } = await api.get(`/reviews/shop/${shop.id}`);
+        setReviews(data.reviews || []);
+      } catch (error) {
+        console.error('Failed to fetch reviews', error);
+      }
+    };
+    fetchReviews();
+  }, [shop?.id]);
+
+  // Calculate rating breakdown
+  const ratingBreakdown = React.useMemo(() => {
+    const counts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    reviews.forEach((r: any) => {
+      const rating = Math.round(Number(r.rating) || 0);
+      if (rating >= 1 && rating <= 5) {
+        counts[rating]++;
+      }
+    });
+    const total = reviews.length || 1; // Avoid division by zero
+    return {
+      counts,
+      percentages: {
+        1: Math.round((counts[1] / total) * 100),
+        2: Math.round((counts[2] / total) * 100),
+        3: Math.round((counts[3] / total) * 100),
+        4: Math.round((counts[4] / total) * 100),
+        5: Math.round((counts[5] / total) * 100),
+      },
+      total: reviews.length
+    };
+  }, [reviews]);
 
   const tabs = [
     { id: 'profile' as const, label: 'Shop Profile', icon: User },
@@ -117,12 +254,10 @@ export const ShopProfileSettings: React.FC = () => {
     try {
       await api.put('/shops/profile', shopData);
       Swal.fire({
+        ...themeConfig,
         title: 'Profile Updated!',
         text: 'Your shop profile has been successfully saved.',
         icon: 'success',
-        confirmButtonColor: '#FACC15',
-        background: '#0f172a',
-        color: '#fff'
       });
       // showToast('Profile updated successfully!'); // Removed in favor of Swal
       setIsEditing(false);
@@ -130,12 +265,11 @@ export const ShopProfileSettings: React.FC = () => {
     } catch (error) {
        console.error('Failed to update profile', error);
        Swal.fire({
+        ...themeConfig,
         title: 'Update Failed',
         text: 'Could not save profile changes. Please try again.',
         icon: 'error',
-        confirmButtonColor: '#FACC15',
-        background: '#0f172a',
-        color: '#fff'
+        confirmButtonColor: '#ef4444',
       });
     }
   };
@@ -390,7 +524,7 @@ export const ShopProfileSettings: React.FC = () => {
               </h3>
               <div className="text-center mb-4">
                 <p className="text-5xl font-black text-primary">{Number(shop.rating || 0).toFixed(1)}</p>
-                <p className="text-slate-400 text-sm">{shop.reviewCount} total reviews</p>
+                <p className="text-slate-400 text-sm">{ratingBreakdown.total} total reviews</p>
               </div>
               <div className="space-y-2">
                 {[5, 4, 3, 2, 1].map(stars => (
@@ -399,10 +533,11 @@ export const ShopProfileSettings: React.FC = () => {
                     <Star className="w-3 h-3 text-primary fill-primary" />
                     <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
                       <div 
-                        className="h-full bg-primary" 
-                        style={{ width: `${stars === 5 ? 70 : stars === 4 ? 20 : stars === 3 ? 7 : 3}%` }}
+                        className="h-full bg-primary transition-all" 
+                        style={{ width: `${ratingBreakdown.percentages[stars as keyof typeof ratingBreakdown.percentages]}%` }}
                       />
                     </div>
+                    <span className="text-xs text-slate-500 w-6 text-right">{ratingBreakdown.counts[stars as keyof typeof ratingBreakdown.counts]}</span>
                   </div>
                 ))}
               </div>
@@ -510,18 +645,49 @@ export const ShopProfileSettings: React.FC = () => {
                           <span className="badge badge-ghost badge-sm">{service.category}</span>
                         </td>
                         <td>
-                          <input 
-                            type="text"
-                            defaultValue={shop.customPrices?.[service.id] || 'Quote'}
-                            disabled={!isEditing}
-                            className="input input-sm input-bordered bg-slate-800 border-white/10 w-24"
-                          />
+                          {editingServiceId === service.id ? (
+                            <div className="flex items-center gap-1">
+                              <input 
+                                type="text"
+                                value={servicePrices[service.id] || ''}
+                                onChange={(e) => setServicePrices(prev => ({ ...prev, [service.id]: e.target.value }))}
+                                className="input input-sm input-bordered bg-slate-800 border-primary w-20"
+                                autoFocus
+                              />
+                              <button 
+                                onClick={() => handleSaveServicePrice(service.id)}
+                                className="btn btn-xs btn-primary"
+                              >
+                                Save
+                              </button>
+                              <button 
+                                onClick={() => setEditingServiceId(null)}
+                                className="btn btn-xs btn-ghost"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="font-medium">{servicePrices[service.id] || 'Quote'}</span>
+                          )}
                         </td>
                         <td className="text-slate-400">{service.duration || 'Varies'}</td>
                         <td>
                           <div className="flex gap-1">
-                            <button className="btn btn-ghost btn-xs"><Edit className="w-3 h-3" /></button>
-                            <button className="btn btn-ghost btn-xs text-error"><Trash2 className="w-3 h-3" /></button>
+                            <button 
+                              onClick={() => setEditingServiceId(service.id)}
+                              className="btn btn-ghost btn-xs tooltip" 
+                              data-tip="Edit Price"
+                            >
+                              <Edit className="w-3 h-3" />
+                            </button>
+                            <button 
+                              onClick={() => handleRemoveService(service.id, service.name)}
+                              className="btn btn-ghost btn-xs text-error tooltip"
+                              data-tip="Remove Service"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
                           </div>
                         </td>
                       </tr>

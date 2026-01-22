@@ -24,6 +24,7 @@ interface QuoteRequestViewProps {
   preSelectedVehicle?: Vehicle;
   preSelectedShop?: Shop;
   preSelectedServiceId?: string;
+  initialDescription?: string;
   onBack?: () => void;
   onSubmit?: (data: QuoteRequestData) => void;
   onAddVehicle?: () => void;
@@ -56,6 +57,7 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
   preSelectedVehicle,
   preSelectedShop,
   preSelectedServiceId,
+  initialDescription,
   onBack,
   onSubmit,
   onAddVehicle,
@@ -64,6 +66,7 @@ export const QuoteRequestView: React.FC<QuoteRequestViewProps> = ({
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(preSelectedVehicle || null);
   const [description, setDescription] = useState(() => {
+    if (initialDescription) return initialDescription;
     if (preSelectedServiceId) {
         const svc = MOCK_SERVICES.find(s => s.id === preSelectedServiceId);
         return svc ? `I need a ${svc.name}. ${svc.description}` : '';

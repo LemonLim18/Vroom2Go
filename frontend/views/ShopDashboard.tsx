@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from '../services/api';
 import Swal from 'sweetalert2';
+import { themeConfig } from '../utils/alerts';
 import { ShopChatInterface } from '../components/ShopChatInterface';
 import { QuoteRequest, Booking } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
@@ -72,7 +73,7 @@ export const ShopDashboard: React.FC = () => {
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<QuoteRequest | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [quoteRequests, setQuoteRequests] = useState<any[]>([]);
   const [shopMetrics, setShopMetrics] = useState({
     weeklyRevenue: 0,
@@ -92,6 +93,51 @@ export const ShopDashboard: React.FC = () => {
   const [shopReviews, setShopReviews] = useState<any[]>([]);
   const [respondingReviewId, setRespondingReviewId] = useState<number | null>(null);
   const [responseText, setResponseText] = useState('');
+  
+  // Availability calendar state
+  const [weekStart, setWeekStart] = useState(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dayOfWeek = today.getDay();
+    const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Monday as start
+    today.setDate(today.getDate() - diff);
+    return today;
+  });
+  const [timeSlots, setTimeSlots] = useState<any[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [creatingSlot, setCreatingSlot] = useState(false);
+  const [shopId, setShopId] = useState<number | null>(null);
+
+  // Fetch shop ID for the current user
+  React.useEffect(() => {
+    const fetchShopId = async () => {
+      try {
+        const { data } = await api.get('/shops/my');
+        if (data?.id) setShopId(data.id);
+      } catch (error) {
+        console.error('Failed to fetch shop ID', error);
+      }
+    };
+    fetchShopId();
+  }, []);
+
+  // Fetch time slots for the current week
+  React.useEffect(() => {
+    if (!shopId) return;
+    const fetchSlots = async () => {
+      setLoadingSlots(true);
+      try {
+        const startDate = weekStart.toISOString().split('T')[0];
+        const { data } = await api.get(`/shops/${shopId}/availability/week?startDate=${startDate}`);
+        setTimeSlots(data);
+      } catch (error) {
+        console.error('Failed to fetch time slots', error);
+      } finally {
+        setLoadingSlots(false);
+      }
+    };
+    fetchSlots();
+  }, [shopId, weekStart]);
   
   // Fetch real quote requests
   React.useEffect(() => {
@@ -177,7 +223,7 @@ export const ShopDashboard: React.FC = () => {
           showToast('Response posted successfully!');
       } catch (error) {
           console.error('Failed to respond:', error);
-          showToast('Failed to post response');
+          showToast('Failed to post response', 'error');
       }
   };
 
@@ -186,16 +232,13 @@ export const ShopDashboard: React.FC = () => {
       // For COMPLETED status, show SweetAlert2 confirmation
       if (newStatus === 'COMPLETED') {
           const result = await Swal.fire({
+              ...themeConfig,
               title: 'Complete this service?',
               text: 'This will mark the job as completed. The customer will be notified and can leave a review.',
               icon: 'question',
               showCancelButton: true,
-              confirmButtonColor: '#facc15',
-              cancelButtonColor: '#6b7280',
               confirmButtonText: 'Yes, complete it!',
               cancelButtonText: 'Not yet',
-              background: '#1e293b',
-              color: '#fff'
           });
           
           if (!result.isConfirmed) {
@@ -206,16 +249,14 @@ export const ShopDashboard: React.FC = () => {
       // For CANCELLED status, also confirm
       if (newStatus === 'CANCELLED') {
           const result = await Swal.fire({
+              ...themeConfig,
               title: 'Decline this booking?',
               text: 'The customer will be notified that the booking was declined.',
               icon: 'warning',
               showCancelButton: true,
-              confirmButtonColor: '#ef4444',
-              cancelButtonColor: '#6b7280',
+              confirmButtonColor: '#ef4444', // Red for decline
               confirmButtonText: 'Yes, decline',
               cancelButtonText: 'Keep it',
-              background: '#1e293b',
-              color: '#fff'
           });
           
           if (!result.isConfirmed) {
@@ -233,27 +274,25 @@ export const ShopDashboard: React.FC = () => {
           // Show success message
           if (newStatus === 'COMPLETED') {
               Swal.fire({
+                  ...themeConfig,
                   title: 'Job Completed!',
                   text: 'Great work! The customer has been notified.',
                   icon: 'success',
-                  confirmButtonColor: '#facc15',
-                  background: '#1e293b',
-                  color: '#fff'
               });
           } else {
               showToast(`Booking ${newStatus.toLowerCase().replace('_', ' ')} successfully!`);
           }
       } catch (error) {
           console.error('Failed to update booking:', error);
-          showToast('Failed to update booking');
+          showToast('Failed to update booking', 'error');
       } finally {
           setUpdatingBookingId(null);
       }
   };
 
   // Show toast notification
-  const showToast = (message: string) => {
-    setToastMessage(message);
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ text: message, type });
     setTimeout(() => setToastMessage(null), 3000);
   };
 
@@ -770,66 +809,152 @@ export const ShopDashboard: React.FC = () => {
       {/* Calendar Tab */}
       {activeTab === 'calendar' && (
         <div className="space-y-6">
+          {/* Week Navigation */}
           <div className="flex justify-between items-center">
-            <h3 className="font-bold text-lg">Weekly Availability</h3>
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => {
+                  const newStart = new Date(weekStart);
+                  newStart.setDate(newStart.getDate() - 7);
+                  setWeekStart(newStart);
+                }}
+                className="btn btn-ghost btn-sm"
+              >
+                ← Prev Week
+              </button>
+              <h3 className="font-bold text-lg">
+                {weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(weekStart.getTime() + 5 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </h3>
+              <button 
+                onClick={() => {
+                  const newStart = new Date(weekStart);
+                  newStart.setDate(newStart.getDate() + 7);
+                  setWeekStart(newStart);
+                }}
+                className="btn btn-ghost btn-sm"
+              >
+                Next Week →
+              </button>
+            </div>
             <button 
               onClick={() => setShowEditScheduleModal(true)}
-              className="btn btn-primary btn-sm"
+              className="btn btn-primary btn-sm gap-2"
             >
-              Edit Schedule
+              <Calendar className="w-4 h-4" /> Add Slots
             </button>
           </div>
 
+          {/* Interactive Calendar Grid */}
           <div className="glass-card rounded-2xl p-6 border border-white/5 overflow-x-auto">
-            <table className="table w-full">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th className="text-center">Mon</th>
-                  <th className="text-center">Tue</th>
-                  <th className="text-center">Wed</th>
-                  <th className="text-center">Thu</th>
-                  <th className="text-center">Fri</th>
-                  <th className="text-center">Sat</th>
-                </tr>
-              </thead>
-              <tbody>
-                {CALENDAR_SLOTS.map((slot, i) => (
-                  <tr key={i}>
-                    <td className="font-medium">{slot.time}</td>
-                    {['mon', 'tue', 'wed', 'thu', 'fri', 'sat'].map((day) => (
-                      <td key={day} className="text-center">
-                        <span className={`badge badge-sm ${
-                          slot[day as keyof typeof slot] === 'Booked' ? 'badge-primary' : 'badge-ghost'
-                        }`}>
-                          {slot[day as keyof typeof slot]}
-                        </span>
-                      </td>
-                    ))}
+            {loadingSlots ? (
+              <div className="flex justify-center py-10"><span className="loading loading-spinner text-primary"></span></div>
+            ) : (
+              <table className="table w-full">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    {[0, 1, 2, 3, 4, 5].map(offset => {
+                      const day = new Date(weekStart);
+                      day.setDate(day.getDate() + offset);
+                      return (
+                        <th key={offset} className="text-center">
+                          <div>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][offset]}</div>
+                          <div className="text-xs text-slate-500">{day.getDate()}</div>
+                        </th>
+                      );
+                    })}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'].map(time => (
+                    <tr key={time}>
+                      <td className="font-medium">{time.replace(/^(\d+):/, (m, h) => `${parseInt(h) > 12 ? parseInt(h) - 12 : h}:${time.split(':')[1]} ${parseInt(h) >= 12 ? 'PM' : 'AM'}`)}</td>
+                      {[0, 1, 2, 3, 4, 5].map(offset => {
+                        const day = new Date(weekStart);
+                        day.setDate(day.getDate() + offset);
+                        const dateStr = day.toISOString().split('T')[0];
+                        
+                        // Find slot for this day/time
+                        const slot = timeSlots.find(s => {
+                          const slotDate = new Date(s.date).toISOString().split('T')[0];
+                          const slotTime = new Date(s.startTime).toTimeString().substring(0, 5);
+                          return slotDate === dateStr && slotTime === time;
+                        });
+
+                        return (
+                          <td key={offset} className="text-center p-1">
+                            {slot ? (
+                              slot.isBooked ? (
+                                <div className="tooltip" data-tip={`${slot.booking?.user?.name || 'Customer'} - ${slot.booking?.vehicle?.make || ''}`}>
+                                  <span className="badge badge-primary badge-sm cursor-help">Booked</span>
+                                </div>
+                              ) : (
+                                <span className="badge badge-success badge-sm">Available</span>
+                              )
+                            ) : (
+                              <button 
+                                onClick={async () => {
+                                  if (creatingSlot) return;
+                                  setCreatingSlot(true);
+                                  try {
+                                    const endHour = (parseInt(time.split(':')[0]) + 1).toString().padStart(2, '0');
+                                    await api.post('/shops/availability', {
+                                      slots: [{ date: dateStr, startTime: time, endTime: `${endHour}:00` }]
+                                    });
+                                    // Refresh slots
+                                    const startDate = weekStart.toISOString().split('T')[0];
+                                    const { data } = await api.get(`/shops/${shopId}/availability/week?startDate=${startDate}`);
+                                    setTimeSlots(data);
+                                    showToast('Slot created!');
+                                  } catch (error) {
+                                    console.error('Failed to create slot', error);
+                                    showToast('Failed to create slot', 'error');
+                                  } finally {
+                                    setCreatingSlot(false);
+                                  }
+                                }}
+                                className="btn btn-ghost btn-xs opacity-50 hover:opacity-100"
+                                disabled={creatingSlot}
+                              >
+                                +
+                              </button>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
+          {/* Stats Grid */}
           <div className="grid md:grid-cols-2 gap-6">
             <div className="glass-card rounded-2xl p-5 border border-white/5">
               <h4 className="font-bold mb-3">Today's Schedule</h4>
               <div className="space-y-2">
-                <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
-                  <div>
-                    <p className="font-medium">10:00 AM - Oil Change</p>
-                    <p className="text-xs text-slate-400">2023 Honda Civic</p>
-                  </div>
-                  <span className="badge badge-primary badge-sm">Confirmed</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
-                  <div>
-                    <p className="font-medium">2:00 PM - Brake Inspection</p>
-                    <p className="text-xs text-slate-400">2022 Toyota RAV4</p>
-                  </div>
-                  <span className="badge badge-warning badge-sm">Pending</span>
-                </div>
+                {timeSlots.filter(s => {
+                  const today = new Date().toISOString().split('T')[0];
+                  const slotDate = new Date(s.date).toISOString().split('T')[0];
+                  return slotDate === today && s.isBooked;
+                }).length === 0 ? (
+                  <p className="text-slate-500 text-sm">No bookings today</p>
+                ) : (
+                  timeSlots.filter(s => {
+                    const today = new Date().toISOString().split('T')[0];
+                    const slotDate = new Date(s.date).toISOString().split('T')[0];
+                    return slotDate === today && s.isBooked;
+                  }).map(slot => (
+                    <div key={slot.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
+                      <div>
+                        <p className="font-medium">{new Date(slot.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className="text-xs text-slate-400">{slot.booking?.vehicle?.make} {slot.booking?.vehicle?.model}</p>
+                      </div>
+                      <span className="badge badge-primary badge-sm">Booked</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -838,15 +963,17 @@ export const ShopDashboard: React.FC = () => {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Available Slots This Week</span>
-                  <span className="font-bold">18</span>
+                  <span className="font-bold">{timeSlots.filter(s => !s.isBooked).length}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Booked Slots</span>
-                  <span className="font-bold text-primary">24</span>
+                  <span className="font-bold text-primary">{timeSlots.filter(s => s.isBooked).length}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Utilization Rate</span>
-                  <span className="font-bold text-green-400">57%</span>
+                  <span className="font-bold text-green-400">
+                    {timeSlots.length > 0 ? Math.round((timeSlots.filter(s => s.isBooked).length / timeSlots.length) * 100) : 0}%
+                  </span>
                 </div>
               </div>
             </div>
@@ -946,9 +1073,9 @@ export const ShopDashboard: React.FC = () => {
       {/* Toast Notification */}
       {toastMessage && (
         <div className="toast toast-end toast-bottom z-50">
-          <div className="alert alert-success">
-            <CheckCircle className="w-5 h-5" />
-            <span>{toastMessage}</span>
+          <div className={`alert ${toastMessage.type === 'error' ? 'alert-error' : 'alert-success'}`}>
+            {toastMessage.type === 'error' ? <AlertCircle className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+            <span>{toastMessage.text}</span>
           </div>
         </div>
       )}

@@ -324,10 +324,10 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                     <p className="text-sm text-slate-400 flex items-center gap-1">
                       <MapPin className="w-3 h-3" /> {booking.shop.address}
                     </p>
-                    <div className="flex items-center gap-2 mt-2">
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {getStatusBadge(booking.status)}
                       {booking.service && (
-                        <span className="badge badge-outline badge-sm">{booking.service.name}</span>
+                        <span className="badge badge-outline badge-sm truncate max-w-[150px]" title={booking.service.name}>{booking.service.name}</span>
                       )}
                     </div>
                   </div>

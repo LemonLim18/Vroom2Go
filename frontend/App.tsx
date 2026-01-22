@@ -26,6 +26,7 @@ import ResetPasswordView from './views/ResetPasswordView';
 import { UserQuotesView } from './views/UserQuotesView';
 import { MyBookingsView } from './views/MyBookingsView';
 import { MOCK_SERVICES, MOCK_BOOKINGS, MOCK_QUOTES, getShopById } from './constants';
+import { themeConfig } from './utils/alerts';
 
 // Placeholder view for Service Details
 const ServiceDetails: React.FC<{service: Service, onBack: () => void, onCompare: () => void, onRequestQuote: () => void}> = ({ service, onBack, onCompare }) => (
@@ -270,12 +271,23 @@ const App: React.FC = () => {
           onBack={() => setSelectedQuote(null)}
           onAccept={(quote) => {
             // Transition to Booking View with this quote
-            const shop = getShopById(quote.shopId);
+            // First try to get shop from the quote object itself (backend data)
+            const quoteShop = (quote as any).shop;
+            // Fallback to local lookup if valid
+            const shop = quoteShop || getShopById(quote.shopId);
+            
             if (shop) {
               setSelectedShop(shop);
               setIsBooking(true);
             } else {
               console.error('Shop not found for quote', quote.id);
+              Swal.fire({
+                  icon: 'error',
+                  title: 'Shop Error',
+                  text: `Could not load shop details for shop ID: ${quote.shopId}`,
+                  background: '#1e293b',
+                  color: '#fff'
+              });
             }
           }}
           onReject={() => setSelectedQuote(null)}
@@ -424,6 +436,7 @@ const App: React.FC = () => {
             preSelectedVehicle={navigationData?.vehicle || selectedVehicle || undefined}
             preSelectedShop={navigationData?.shop || selectedShop || undefined}
             preSelectedServiceId={navigationData?.serviceId || selectedService?.id}
+            initialDescription={navigationData?.initialDescription}
             onBack={() => {
                 setSelectedService(null);
                 setSelectedShop(null);
@@ -510,16 +523,13 @@ const App: React.FC = () => {
   const handleRoleSwitch = (targetRole: UserRole) => {
     // strict session management: specific roles require specific login sessions
     Swal.fire({
+      ...themeConfig,
       title: `Switch to ${targetRole}?`,
       text: "This requires logging in with a different account. Your current session will be closed.",
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#FACC15', // Primary Yellow
-      cancelButtonColor: '#1e293b', // Slate 800
       confirmButtonText: 'Yes, Sign Out & Switch',
       cancelButtonText: 'Cancel',
-      background: '#0f172a', // Slate 900
-      color: '#fff'
     }).then((result) => {
       if (result.isConfirmed) {
         localStorage.removeItem('token');
