@@ -6,6 +6,7 @@ const router = Router();
 
 router.get('/', getShops);
 router.get('/profile', protect, authorize('SHOP'), getMyShop);
+router.get('/my', protect, authorize('SHOP'), getMyShop);
 router.get('/analytics', protect, authorize('SHOP'), getShopAnalytics);
 router.put('/profile', protect, authorize('SHOP'), updateShopProfile);
 

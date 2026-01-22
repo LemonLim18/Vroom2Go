@@ -360,13 +360,13 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
 
               <section>
                 <h3 className="text-sm font-black text-primary uppercase tracking-widest mb-4 flex items-center gap-2">
-                   <ChevronRight className="w-4 h-4" /> Service Location
+                   <ChevronRight className="w-4 h-4" /> Service Type
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[
-                    { id: BookingMethod.DROP_OFF, label: 'Standard', sub: 'In-Shop', icon: Building2 },
-                    { id: BookingMethod.TOWING, label: 'Recovery', sub: `+$${TOW_FEE}`, icon: Truck },
-                    { id: BookingMethod.MOBILE, label: 'Mobile', sub: `+$${MOBILE_FEE}`, icon: Home }
+                    { id: BookingMethod.DROP_OFF, label: 'Standard', sub: '+$0', description: 'Visit our garage', icon: Building2 },
+                    { id: BookingMethod.TOWING, label: 'Recovery', sub: `+$${TOW_FEE}`, description: 'We Tow Your Vehicle', icon: Truck },
+                    { id: BookingMethod.MOBILE, label: 'Mobile', sub: `+$${MOBILE_FEE}`, description: 'We Come To You', icon: Home }
                   ].map((method) => (
                     <div 
                       key={method.id}
@@ -375,12 +375,15 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                     >
                       <method.icon className="w-6 h-6 mb-1" />
                       <div className="font-black italic uppercase tracking-tighter text-xs">{method.label}</div>
-                      <div className={`text-[9px] font-black uppercase tracking-widest ${bookingMethod === method.id ? 'text-black/60' : 'text-slate-500'}`}>{method.sub}</div>
+                      <div className={`text-[8px] font-black uppercase tracking-widest ${bookingMethod === method.id ? 'text-black/60' : 'text-slate-500'}`}>{method.description}</div>
+                      <div className={`text-[9px] font-black uppercase tracking-widest ${bookingMethod === method.id ? 'text-black/60' : 'text-primary'}`}>{method.sub}</div>
                     </div>
                   ))}
                 </div>
                 {(bookingMethod === BookingMethod.TOWING || bookingMethod === BookingMethod.MOBILE) && (
                    <div className="mt-4 animate-in slide-in-from-top-2">
+                      <div className="text-[12px] font-black uppercase tracking-widest mb-2">Service Location</div>
+
                       <input 
                         className="input bg-slate-800/50 border-white/5 w-full rounded-xl text-sm font-bold placeholder-slate-600 focus:border-primary transition-all"
                         placeholder="Coordinates / Street Address..."
