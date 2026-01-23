@@ -268,3 +268,33 @@ export const notifyQuoteRequest = (shopUserId: number, requestId: number) => {
     `/dashboard?tab=quotes`
   );
 };
+
+export const notifyBookingCreated = (userId: number, customerName: string, bookingId: number, vehicleInfo: string) => {
+  return createNotification(
+    userId,
+    NotificationType.BOOKING,
+    'New Booking Request',
+    `New booking from ${customerName} for ${vehicleInfo}`,
+    `/dashboard?tab=bookings`
+  );
+};
+
+export const notifyBookingCancelled = (userId: number, customerName: string, bookingId: number, isLate: boolean) => {
+  return createNotification(
+    userId,
+    NotificationType.BOOKING,
+    'Booking Cancelled',
+    `${customerName} has cancelled booking #${bookingId}. ${isLate ? 'Late cancellation (Deposit kept).' : 'Deposit fully refunded.'}`,
+    `/bookings/${bookingId}`
+  );
+};
+
+export const notifyRescheduleAccepted = (shopUserId: number, customerName: string, newDate: string, newTime: string, bookingId: number) => {
+  return createNotification(
+    shopUserId,
+    NotificationType.BOOKING,
+    'Reschedule Confirmed',
+    `${customerName} accepted your reschedule proposal. New time: ${newDate} @ ${newTime}`,
+    `/dashboard?tab=calendar`
+  );
+};

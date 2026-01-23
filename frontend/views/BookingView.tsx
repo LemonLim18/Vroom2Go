@@ -22,6 +22,8 @@ import {
   Wallet,
   AlertCircle
 } from 'lucide-react';
+import Swal from 'sweetalert2';
+import { themeConfig } from '../utils/alerts';
 
 // Local Quote interface removed - using imported type from ../types
 // Ensure Quote is imported in line 4:
@@ -82,9 +84,13 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
       setLoadingSlots(true);
       setSelectedTime(''); // Reset time when date changes
       try {
+        console.log(`[BookingView] Fetching availability for shop ${shop.id} on date ${selectedDate}`);
         const { data } = await api.get(`/shops/${shop.id}/availability?date=${selectedDate}`);
+        console.log(`[BookingView] Received ${data.length} slots:`, data);
         // Only show slots that are NOT booked
-        setAvailableSlots(data.filter((s: any) => !s.isBooked));
+        const available = data.filter((s: any) => !s.isBooked);
+        console.log(`[BookingView] ${available.length} slots are available (not booked)`);
+        setAvailableSlots(available);
       } catch (error) {
         console.error('Failed to fetch available slots', error);
         setAvailableSlots([]);
@@ -94,6 +100,7 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
     };
     fetchSlots();
   }, [selectedDate, shop.id]);
+
 
   useEffect(() => {
     const fetchVehicles = async () => {
@@ -176,13 +183,18 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
     // NOTE: quote.estimatedTotal ALREADY includes taxes/shop fees typically.
     // So we use it as the main subtotal.
     basePrice = quote.estimatedTotal;
+    
+    // Use quote's tax if available, otherwise 0
+    // @ts-ignore - Quote type includes taxes usually
+    taxes = quote.taxes || 0;
 
     const finalTotal = basePrice + extraFee + PLATFORM_FEE;
     totalPrice = finalTotal;
 
-    // Deposit uses shop % from quote if available, or 20% default
-    // We can assume quote object might carry deposit info, but recalculating is safer with extras
-    depositAmount = totalPrice * 0.20;
+    // Deposit uses shop % from quote if available, or default
+    // Using shop.depositPercent || 25 to match QuoteDetailView defaults
+    const depositRate = (shop.depositPercent || 25) / 100;
+    depositAmount = totalPrice * depositRate;
 
   } else {
     // Standard Direct Booking Logic
@@ -192,7 +204,9 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
     const subtotal = basePrice + extraFee;
     taxes = subtotal * TAX_RATE;
     totalPrice = subtotal + taxes + PLATFORM_FEE;
-    depositAmount = (totalPrice * 0.20);
+    
+    const depositRate = (shop.depositPercent || 25) / 100;
+    depositAmount = totalPrice * depositRate;
   }
 
   const remainingBalance = totalPrice - depositAmount;
@@ -200,73 +214,69 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
   const handleConfirm = async () => {
     if (!selectedVehicleId || !selectedDate || !selectedTime) return;
 
+    // Find the selected slot object to get the real time
+    const selectedSlot = availableSlots.find(s => s.id.toString() === selectedTime);
+    if (!selectedSlot) {
+        showToast('Selected time slot is no longer available');
+        return;
+    }
+
+    // Format time correctly from the slot's startTime
+    // FIX: Project 1970 time to current date to avoid historical timezone offsets
+    const slotTimeDate = new Date(selectedSlot.startTime);
+    const time = new Date(); // Use today
+    time.setUTCHours(slotTimeDate.getUTCHours(), slotTimeDate.getUTCMinutes(), 0, 0);
+
+    const hours = time.getHours().toString().padStart(2, '0');
+    const minutes = time.getMinutes().toString().padStart(2, '0');
+    const timeString = `${hours}:${minutes}`;
+
+    // Warning confirmation for non-refundable deposit
+    const result = await Swal.fire({
+      ...themeConfig,
+      title: 'Confirm Deposit Payment',
+      html: `
+        <div class="text-left">
+           <p class="mb-4">You are about to pay a <strong>$${depositAmount.toFixed(2)}</strong> deposit to secure your slot.</p>
+           <div class="alert alert-warning text-sm">
+             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+             <span><strong>Important:</strong> This deposit is non-refundable if you decide to cancel this booking afterwards.</span>
+           </div>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Pay Deposit',
+      cancelButtonText: 'Cancel',
+    });
+
+    if (!result.isConfirmed) return;
+
     setIsProcessing(true);
     try {
-      // Check if we are using mock data (non-numeric IDs)
-      // If so, simulate success without backend call to prevent 500 error
-      const isMockShop = isNaN(Number(shop.id));
-      const isMockService = isNaN(Number(selectedServiceId));
-
-      if (isMockShop || isMockService || (quote && isNaN(Number(quote.id)))) {
-          console.warn('Handling mock booking locally');
-
-          // Create a realistic mock booking object for frontend display
-          const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId);
-          const mockBooking = {
-              id: Date.now(), // Generate a unique numeric ID
-              scheduledDate: selectedDate,
-              scheduledTime: `${selectedDate} ${selectedTime}`,
-              status: 'PENDING',
-              method: bookingMethod,
-              notes: quote ? `Booking from Quote #${quote.id}` : `Service: ${selectedService?.name || 'General'}`,
-              userId: 999,
-              shopId: 0, // Use 0 to indicate mock/unknown
-              quoteId: quote?.id, // Link quote
-              shop: {
-                  name: shop.name,
-                  address: shop.address,
-                  imageUrl: shop.imageUrl || shop.image,
-                  phone: shop.phone
-              },
-              vehicle: {
-                  make: selectedVehicle?.make || 'Unknown',
-                  model: selectedVehicle?.model || 'Vehicle',
-                  year: selectedVehicle?.year || 2024,
-                  licensePlate: selectedVehicle?.licensePlate
-              },
-              service: { name: selectedService?.name || 'General Service' },
-              quote: { totalEstimate: totalPrice }
-          };
-
-          // Booking created via API mock fallback
-          console.log('Mock booking created:', mockBooking);
-
-          await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
-          setIsSuccess(true);
-          return;
-      }
-
-      const payload = {
-        shopId: shop.id,
+      // Strict API Only - No Mock Fallbacks
+        const payload = {
+        shopId: Number(shop.id),
+        // FIX: Send ID to ensure exact slot matching
+        timeSlotId: Number(selectedSlot.id),
         vehicleId: selectedVehicleId,
-        serviceId: selectedServiceId, // Send the ID, backend parsies it
-        quoteId: quote?.id, // Link to quote if present
+        serviceId: selectedServiceId ? Number(selectedServiceId) : null,
+        quoteId: quote?.id,
         scheduledDate: selectedDate,
-        scheduledTime: `${selectedDate} ${selectedTime}`,
+        scheduledTime: `${selectedDate}T${timeString}:00`, // ISO YYYY-MM-DDTHH:MM:00
         method: bookingMethod,
-        notes: quote ? `Booking from Quote #${quote.id}` : `Service: ${selectedService?.name || 'General'}`, // Add service name to notes as fallback
+        notes: quote ? `Booking from Quote #${quote.id}` : `Service: ${selectedService?.name || 'General'}`,
         status: 'PENDING'
       };
 
+      console.log('Creating booking via API:', payload);
       await api.post('/bookings', payload);
 
-      // If success and it was a quote, maybe mark quote as ACCEPTED via API?
-      // The backend creation of booking with quoteId might handle this transition automatically.
-
       setIsSuccess(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Booking failed', error);
-      showToast('Booking failed. Please try again.');
+      const msg = error.response?.data?.message || 'Booking failed. Please try again.';
+      showToast(msg);
     } finally {
       setIsProcessing(false);
     }
@@ -399,20 +409,54 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                    <ChevronRight className="w-4 h-4" /> Service Date & Time
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <input type="date" className="input bg-slate-800/50 border-white/5 rounded-xl font-bold italic" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} min={new Date().toISOString().split('T')[0]} />
-                  <select 
-                    className="select bg-slate-800/50 border-white/5 rounded-xl font-bold italic" 
-                    value={selectedTime} 
-                    onChange={(e) => setSelectedTime(e.target.value)}
-                    disabled={loadingSlots || !selectedDate}
-                  >
-                    <option disabled value="">{loadingSlots ? 'Loading...' : selectedDate ? (availableSlots.length > 0 ? 'Select Available Time' : 'No slots available') : 'Select date first'}</option>
-                    {availableSlots.map(slot => {
-                      const time = new Date(slot.startTime);
-                      const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                      return <option key={slot.id} value={slot.id}>{timeStr}</option>;
-                    })}
-                  </select>
+                  <input type="date" className="col-span-2 input bg-slate-800/50 border-white/5 rounded-xl font-bold italic w-full" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} min={new Date().toISOString().split('T')[0]} />
+                  <div className={`col-span-2 grid grid-cols-3 sm:grid-cols-4 gap-2 ${loadingSlots ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {availableSlots.length > 0 ? (
+                      availableSlots.map(slot => {
+                        // FIX: Project 1970 time to current date to avoid historical timezone offsets (e.g. SG 1970 was +7.5)
+                        const slotDate = new Date(slot.startTime);
+                        const time = new Date(); // Use today
+                        time.setUTCHours(slotDate.getUTCHours(), slotDate.getUTCMinutes(), 0, 0);
+                        
+                        const timeStr = time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                        const isSelected = selectedTime === slot.id.toString();
+                        
+                        return (
+                          <button
+                            key={slot.id}
+                            onClick={() => setSelectedTime(slot.id.toString())}
+                            className={`
+                              btn btn-sm h-10 border-white/10 font-bold transition-all relative overflow-hidden group
+                              flex items-center justify-center whitespace-nowrap gap-1.5 px-1
+                              ${isSelected 
+                                ? 'bg-yellow-500 hover:bg-yellow-400 text-black border-none shadow-[0_0_20px_rgba(234,179,8,0.4)] scale-105 z-10' 
+                                : 'bg-slate-800/50 hover:bg-yellow-500/20 hover:border-yellow-500/50 text-slate-300 hover:text-white'
+                              }
+                            `}
+                          >
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12 translate-x-[-150%] animate-[shimmer_1s_infinite]" />
+                            )}
+                            <Clock className={`w-3.5 h-3.5 flex-shrink-0 ${isSelected ? 'text-black' : 'text-slate-500 group-hover:text-yellow-400'}`} />
+                            <span className="text-[13px]">{timeStr}</span>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="col-span-full py-8 text-center border border-dashed border-white/10 rounded-xl bg-slate-800/30">
+                        {loadingSlots ? (
+                          <span className="loading loading-dots loading-md text-primary" />
+                        ) : selectedDate ? (
+                          <div className="text-slate-500 flex flex-col items-center">
+                            <Clock className="w-8 h-8 mb-2 opacity-50" />
+                            <span>No slots available</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">Select a date above</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 {selectedDate && !loadingSlots && availableSlots.length === 0 && (
                   <p className="text-warning text-xs mt-2 flex items-center gap-1">
@@ -551,7 +595,7 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                <div className="bg-green-500/5 p-5 rounded-2xl border border-green-500/20 mb-6">
                   <div className="flex items-center gap-2 mb-3">
                     <Shield className="w-5 h-5 text-green-400" />
-                    <span className="font-bold text-green-400 text-sm uppercase">Escrow Deposit (20%)</span>
+                    <span className="font-bold text-green-400 text-sm uppercase">Escrow Deposit ({shop.depositPercent || 25}%)</span>
                   </div>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-slate-400 text-sm">Pay Now</span>

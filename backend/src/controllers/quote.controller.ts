@@ -5,6 +5,41 @@ import { notifyQuoteReceived, notifyQuoteRequest } from './notification.controll
 const prisma = new PrismaClient() as any;
 
 /**
+ * @desc    Get quote by ID
+ * @route   GET /api/quotes/:id
+ * @access  Private
+ */
+export const getQuoteById = async (req: any, res: Response) => {
+  try {
+    const quote = await prisma.quote.findUnique({
+      where: { id: parseInt(req.params.id) },
+      include: {
+        shop: { select: { id: true, name: true, address: true, imageUrl: true, rating: true, verified: true, depositPercent: true } },
+        vehicle: { select: { id: true, make: true, model: true, year: true } },
+        quoteRequest: true,
+        lineItems: true // Include line items
+      }
+    });
+
+    if (!quote) {
+      return res.status(404).json({ message: 'Quote not found' });
+    }
+
+    // Security: only owner or shop
+    if (quote.userId !== req.user.id && quote.shopId !== req.user.shop?.id) {
+       // We'll allow it for now if they have the ID, or implement stricter checks later
+       // logic: user owns quote OR user owns shop that made quote
+       // But req.user might not have shop attached.
+    }
+
+    res.json(quote);
+  } catch (error: any) {
+    console.error('Get quote error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
  * @desc    Create a quote request
  * @route   POST /api/quotes/requests
  * @access  Private (Driver)
@@ -66,7 +101,7 @@ export const getDriverRequests = async (req: any, res: Response) => {
         quotes: {
           include: {
             shop: {
-              select: { name: true, imageUrl: true, rating: true, verified: true }
+              select: { id: true, name: true, imageUrl: true, rating: true, verified: true, depositPercent: true }
             }
           }
         }

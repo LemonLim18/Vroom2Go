@@ -10,11 +10,17 @@ export const getShopAvailability = async (req: Request, res: Response) => {
     const { shopId } = req.params;
     const { date } = req.query;
 
+    console.log(`[Availability] Query: shopId=${shopId}, date=${date}`);
+
     if (!date || typeof date !== 'string') {
       return res.status(400).json({ message: 'Date query parameter is required (YYYY-MM-DD)' });
     }
 
-    const targetDate = new Date(date);
+    // Parse as UTC to match how slots are stored
+    const [year, month, day] = date.split('-').map(Number);
+    const targetDate = new Date(Date.UTC(year, month - 1, day));
+    
+    console.log(`[Availability] Parsed targetDate: ${targetDate.toISOString()}`);
 
     const slots = await prisma.timeSlot.findMany({
       where: {
@@ -34,6 +40,8 @@ export const getShopAvailability = async (req: Request, res: Response) => {
       },
     });
 
+    console.log(`[Availability] Found ${slots.length} slots for shop ${shopId} on ${date}`);
+
     res.json(slots);
   } catch (error) {
     console.error('Error fetching availability:', error);
@@ -48,11 +56,18 @@ export const getShopWeeklyAvailability = async (req: Request, res: Response) => 
     const { shopId } = req.params;
     const { startDate } = req.query;
 
-    const start = startDate ? new Date(startDate as string) : new Date();
-    start.setHours(0, 0, 0, 0);
+    // Parse as UTC to match how slots are stored
+    let start: Date;
+    if (startDate && typeof startDate === 'string') {
+      const [year, month, day] = startDate.split('-').map(Number);
+      start = new Date(Date.UTC(year, month - 1, day));
+    } else {
+      const now = new Date();
+      start = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    }
     
     const end = new Date(start);
-    end.setDate(end.getDate() + 7);
+    end.setUTCDate(end.getUTCDate() + 7);
 
     const slots = await prisma.timeSlot.findMany({
       where: {
@@ -67,6 +82,7 @@ export const getShopWeeklyAvailability = async (req: Request, res: Response) => 
         booking: {
           select: {
             id: true,
+            status: true, // Include status for frontend coloring
             user: { select: { name: true } },
             vehicle: { select: { make: true, model: true } },
           },
@@ -108,8 +124,8 @@ export const createTimeSlots = async (req: Request, res: Response) => {
         const [startHour, startMin] = slot.startTime.split(':').map(Number);
         const [endHour, endMin] = slot.endTime.split(':').map(Number);
 
-        const startTime = new Date(1970, 0, 1, startHour, startMin, 0);
-        const endTime = new Date(1970, 0, 1, endHour, endMin, 0);
+        const startTime = new Date(2000, 0, 1, startHour, startMin, 0);
+        const endTime = new Date(2000, 0, 1, endHour, endMin, 0);
 
         return prisma.timeSlot.upsert({
           where: {

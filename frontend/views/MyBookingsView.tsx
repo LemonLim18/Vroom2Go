@@ -18,9 +18,12 @@ import {
   DollarSign,
   Star,
   Camera,
-  ImageIcon
+  ImageIcon,
+  Truck,
+  Building2
 } from 'lucide-react';
-import { showAlert } from '../utils/alerts';
+import Swal from 'sweetalert2';
+import { showAlert, themeConfig } from '../utils/alerts';
 
 type BookingTab = 'upcoming' | 'inProgress' | 'completed';
 
@@ -65,6 +68,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   
   // Review state
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -83,18 +87,12 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
   const fetchBookings = async () => {
     try {
       setLoading(true);
-      const { data } = await api.get('/bookings');
-      
-      // Merge with locally saved mock bookings (for demo purposes)
-      const localMocks = JSON.parse(localStorage.getItem('vroom_mock_bookings') || '[]');
-      // Combine and sort by date descending
-      const allBookings = [...localMocks, ...data].sort((a: any, b: any) => 
-        new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime()
-      );
-
-      setBookings(allBookings);
-    } catch (error) {
+      setError(null);
+      const { data } = await api.get('/bookings/my');
+      setBookings(data);
+    } catch (error: any) {
       console.error('Failed to fetch bookings:', error);
+      setError(error.response?.data?.message || error.message || 'Failed to load bookings');
     } finally {
       setLoading(false);
     }
@@ -140,19 +138,59 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
     }
   };
 
-  const handleCancelBooking = async (bookingId: number) => {
-    const confirmed = await showAlert.confirm('Are you sure you want to cancel this booking?');
-    if (!confirmed) return;
+  const handleCancelBooking = async (booking: Booking) => {
+    // Check if within 24 hours (simplified client check for warning text)
+    // The backend is the source of truth for the refund decision
+    const scheduledTime = new Date(booking.scheduledTime);
+    const now = new Date();
+    const diffHours = (scheduledTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const isLate = diffHours < 24;
+
+    const result = await Swal.fire({
+      ...themeConfig,
+      title: 'Cancel Booking?',
+      html: `
+        <div class="text-left">
+           <p class="mb-4">Are you sure you want to cancel your appointment with <strong>${booking.shop.name}</strong>?</p>
+           ${isLate ? `
+           <div class="alert alert-error text-sm text-left">
+             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+             <span><strong>Warning:</strong> Late cancellation (< 24 hrs). Your deposit will <u>NOT</u> be refunded.</span>
+           </div>
+           ` : `
+           <div class="alert alert-info text-sm text-left">
+             <svg xmlns="http://www.w3.org/2000/svg" class="fill-current shrink-0 h-6 w-6" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"></svg>
+             <span>Your deposit will be fully refunded to your original payment method.</span>
+           </div>
+           `}
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Cancel Booking',
+      cancelButtonText: 'Keep Booking',
+      confirmButtonColor: '#ef4444', 
+    });
+
+    if (!result.isConfirmed) return;
     
-    setCancellingId(bookingId);
+    setCancellingId(booking.id);
     try {
-      await api.put(`/bookings/${bookingId}/status`, { status: 'CANCELLED' });
-      showAlert.success('Booking cancelled successfully');
+      // Proceed with Real Backend Cancellation
+      const { data } = await api.put(`/bookings/${booking.id}/cancel`); 
+      
+      // Backend returns message and refundStatus
+      if (data.refundStatus === 'NON_REFUNDABLE') {
+        showAlert.warning(data.message, 'Cancelled (Late)');
+      } else {
+        showAlert.success(data.message, 'Cancelled & Refunded');
+      }
+
       fetchBookings();
       setSelectedBooking(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to cancel booking:', error);
-      showAlert.error('Failed to cancel booking');
+      showAlert.error(error.response?.data?.message || 'Failed to cancel booking');
     } finally {
       setCancellingId(null);
     }
@@ -279,6 +317,15 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
         <TabButton id="completed" label="Completed" count={completedBookings.length} />
       </div>
 
+      {/* Error Alert */}
+      {error && (
+        <div className="alert alert-error shadow-lg animate-in fade-in slide-in-from-top-4">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span>{error}</span>
+          <button className="btn btn-sm btn-ghost" onClick={fetchBookings}>Retry</button>
+        </div>
+      )}
+
       {/* Content */}
       {loading ? (
         <div className="flex justify-center p-20">
@@ -326,28 +373,144 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                     </p>
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       {getStatusBadge(booking.status)}
-                      {booking.service && (
-                        <span className="badge badge-outline badge-sm truncate max-w-[150px]" title={booking.service.name}>{booking.service.name}</span>
+                      
+                      {/* Booking Method Badge */}
+                      <span className="badge badge-ghost gap-1">
+                        {booking.method === 'MOBILE' && <><Car className="w-3 h-3"/> Mobile</>}
+                        {booking.method === 'TOWING' && <><Truck className="w-3 h-3"/> Towing</>}
+                        {(booking.method === 'DROP_OFF' || !booking.method) && <><Building2 className="w-3 h-3"/> In-Shop</>}
+                      </span>
+
+                      {/* Service Name */}
+                      {(booking.service || booking.quote) && (
+                        <span className="badge badge-outline badge-sm truncate max-w-[150px]" title={booking.service?.name || 'Custom Quote'}>
+                             {booking.service?.name || 'Custom Quote'}
+                        </span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Vehicle & Date */}
-                <div className="flex flex-col md:items-end gap-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Car className="w-4 h-4 text-primary" />
+                {/* Vehicle & Date - Moved Here */}
+                <div className="flex flex-col md:items-end gap-2 text-right">
+                  <div className="flex items-center gap-2 text-sm justify-end">
                     <span className="font-medium">
                       {booking.vehicle.year} {booking.vehicle.make} {booking.vehicle.model}
                     </span>
+                    <Car className="w-4 h-4 text-primary" />
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <Calendar className="w-4 h-4" />
+                  <div className="flex items-center gap-2 text-sm text-slate-400 justify-end">
                     <span>{new Date(booking.scheduledDate).toLocaleDateString()}</span>
-                    <Clock className="w-4 h-4 ml-2" />
-                    <span>{new Date(booking.scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <Calendar className="w-4 h-4 ml-1" />
+                    
+                    <span className="ml-2">{(() => {
+                      try {
+                        let d = new Date(booking.scheduledTime);
+                        if (isNaN(d.getTime())) d = new Date(booking.scheduledTime.replace(' ', 'T'));
+                        if (isNaN(d.getTime())) return 'Time Error';
+                        const projected = new Date();
+                        projected.setUTCHours(d.getUTCHours(), d.getUTCMinutes(), 0, 0);
+                        return projected.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      } catch (e) { return 'Time Error'; }
+                    })()}</span>
+                    <Clock className="w-4 h-4 ml-1" />
                   </div>
                 </div>
+                </div> {/* Close Flex Row */}
+
+                {/* Reschedule Proposal Card */}
+                {booking.notes && booking.notes.includes('[RESCHEDULE PROPOSED]') && (() => {
+                  const dateMatch = booking.notes.match(/New Date: (.*?)\n/);
+                  const timeMatch = booking.notes.match(/New Time: (.*?)\n/);
+                  const msgMatch = booking.notes.match(/Message: (.*)/);
+                  
+                  const newDate = dateMatch ? dateMatch[1].trim() : '';
+                  const newTime = timeMatch ? timeMatch[1].trim() : '';
+                  const message = msgMatch ? msgMatch[1].trim() : '';
+                  
+                  return (
+                    <div className="mt-4 p-4 rounded-xl bg-slate-800/80 border border-primary/20 shadow-lg animate-in slide-in-from-top-2">
+                       <div className="flex items-start gap-3">
+                         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                           <Calendar className="w-5 h-5 text-primary" />
+                         </div>
+                         <div className="flex-1">
+                           <h4 className="font-bold text-white mb-1">Reschedule Proposed</h4>
+                           <p className="text-sm text-slate-300 mb-3">
+                             The shop has proposed a new time for your appointment.
+                           </p>
+                           
+                           <div className="flex flex-wrap gap-4 mb-3 p-3 bg-slate-900/50 rounded-lg border border-white/5">
+                              <div>
+                                <span className="text-xs text-slate-500 block uppercase">New Date</span>
+                                <span className="font-mono font-medium text-primary">{newDate}</span>
+                              </div>
+                              <div>
+                                <span className="text-xs text-slate-500 block uppercase">New Time</span>
+                                <span className="font-mono font-medium text-primary">{newTime}</span>
+                              </div>
+                           </div>
+                           
+                           {message && (
+                             <p className="text-xs text-slate-400 italic mb-4">"{message}"</p>
+                           )}
+                           
+                           <div className="flex gap-2">
+                             <button
+                               onClick={async (e) => {
+                                 e.stopPropagation();
+                                 try {
+                                   await api.put(`/bookings/${booking.id}/reschedule`, {
+                                     newDate,
+                                     newTime
+                                   });
+                                   showToast('Reschedule accepted! Booking updated.');
+                                   fetchBookings();
+                                 } catch (err: any) {
+                                   showToast(err.response?.data?.message || 'Failed to accept reschedule');
+                                 }
+                               }}
+                               className="btn btn-primary btn-sm"
+                             >
+                               Accept
+                             </button>
+                             <button
+                               onClick={async (e) => {
+                                 e.stopPropagation();
+                                 // Reject logic (append note)
+                                 try {
+                                   const rejectionNote = (booking.notes || '').replace(/\[RESCHEDULE PROPOSED\][\s\S]*?(?=\n\n|$)/, '').trim() + '\n\n[RESCHEDULE REJECTED] Customer declined proposed time.';
+                                   await api.put(`/bookings/${booking.id}/status`, {
+                                     status: booking.status,
+                                     notes: rejectionNote
+                                   });
+                                   showToast('Proposal declined.');
+                                   fetchBookings();
+                                 } catch (err) {
+                                   showToast('Failed to decline');
+                                 }
+                               }}
+                               className="btn btn-ghost btn-sm text-error hover:bg-error/10"
+                             >
+                               Decline
+                             </button>
+                           </div>
+                         </div>
+                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Standard Notes (if not proposal or mixed) */}
+                {booking.notes && !booking.notes.includes('[RESCHEDULE PROPOSED]') && (
+                   <div className="mt-3 p-3 rounded-lg text-sm bg-slate-800/50 text-slate-400">
+                      <span className="font-bold text-slate-300 mr-2">Notes:</span> 
+                      {booking.notes.replace(/\[RESCHEDULED\].*/, '')} 
+                      {/* Hide internal logs if needed, or just show all */}
+                   </div>
+                )}
+
+
 
                 {/* Actions */}
                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -359,7 +522,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                   </button>
                   {(booking.status === 'PENDING') && (
                     <button
-                      onClick={() => handleCancelBooking(booking.id)}
+                      onClick={() => handleCancelBooking(booking)}
                       disabled={cancellingId === booking.id}
                       className="btn btn-ghost btn-sm text-error gap-1"
                     >
@@ -390,13 +553,6 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                 </div>
               </div>
 
-              {/* Notes if any */}
-              {booking.notes && (
-                <div className="mt-4 pt-4 border-t border-white/5 text-sm text-slate-400">
-                  <span className="font-medium text-slate-300">Notes:</span> {booking.notes}
-                </div>
-              )}
-            </div>
           ))}
         </div>
       )}
@@ -450,7 +606,17 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                   <div className="flex items-center gap-2 text-slate-400 text-xs mb-1">
                     <Clock className="w-3 h-3" /> Time
                   </div>
-                  <p className="font-bold">{new Date(selectedBooking.scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className="font-bold">{(() => {
+                      try {
+                        let d = new Date(selectedBooking.scheduledTime);
+                        if (isNaN(d.getTime())) {
+                           d = new Date(selectedBooking.scheduledTime.replace(' ', 'T'));
+                        }
+                        return !isNaN(d.getTime()) 
+                          ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : 'Invalid Time';
+                      } catch (e) { return 'Invalid Time'; }
+                  })()}</p>
                 </div>
               </div>
 
@@ -525,7 +691,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
 
               {selectedBooking.status === 'PENDING' && (
                 <button 
-                  onClick={() => handleCancelBooking(selectedBooking.id)}
+                  onClick={() => handleCancelBooking(selectedBooking)}
                   disabled={cancellingId === selectedBooking.id}
                   className="btn btn-ghost w-full text-error gap-2"
                 >

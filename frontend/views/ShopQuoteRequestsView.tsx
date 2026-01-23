@@ -18,118 +18,136 @@ interface ShopQuoteRequestsViewProps {
   onBack?: () => void;
 }
 
-type RequestTab = 'open' | 'responded' | 'won';
+  type RequestTab = 'open' | 'responded' | 'history';
+  
+  export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ onBack }) => {
+    const [requests, setRequests] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
+    const [activeTab, setActiveTab] = useState<RequestTab>('open');
+  
+    // Quote Form State
+    const [quoteForm, setQuoteForm] = useState({
+      description: '',
+      partsEstimate: '',
+      laborEstimate: '',
+      totalEstimate: '',
+      validUntil: ''
+    });
+  
+    useEffect(() => {
+      fetchRequests();
+    }, [activeTab]);
+  
+    const fetchRequests = async () => {
+      try {
+        setLoading(true);
+        setSelectedRequest(null);
+        
+        let endpoint = '/quotes/requests/shop';
+        let isHistoryOrResponded = false;
 
-export const ShopQuoteRequestsView: React.FC<ShopQuoteRequestsViewProps> = ({ onBack }) => {
-  const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<RequestTab>('open');
+        if (activeTab === 'responded' || activeTab === 'history') {
+          endpoint = '/quotes/requests/shop/responded';
+          isHistoryOrResponded = true;
+        }
+        
+        const { data } = await api.get(endpoint);
+        
+        let filteredData = data;
+        if (isHistoryOrResponded) {
+           if (activeTab === 'responded') {
+               // Show only active quotes (pending decision)
+               filteredData = data.filter((r: any) => r.quote?.status === 'QUOTED' || r.quote?.status === 'SENT');
+           } else {
+               // Show history (finalized outcomes)
+               filteredData = data.filter((r: any) => 
+                   r.quote?.status === 'ACCEPTED' || 
+                   r.quote?.status === 'DECLINED' || 
+                   r.quote?.status === 'EXPIRED'
+               );
+           }
+        }
 
-  // Quote Form State
-  const [quoteForm, setQuoteForm] = useState({
-    description: '',
-    partsEstimate: '',
-    laborEstimate: '',
-    totalEstimate: '',
-    validUntil: ''
-  });
-
-  useEffect(() => {
-    fetchRequests();
-  }, [activeTab]);
-
-  const fetchRequests = async () => {
-    try {
-      setLoading(true);
-      setSelectedRequest(null);
-      
-      let endpoint = '/quotes/requests/shop';
-      if (activeTab === 'responded') {
-        endpoint = '/quotes/requests/shop/responded';
+        setRequests(filteredData);
+      } catch (error) {
+        console.error('Failed to fetch requests', error);
+      } finally {
+        setLoading(false);
       }
-      // 'won' tab would need a different endpoint - for now show responded
-      
-      const { data } = await api.get(endpoint);
-      setRequests(data);
-    } catch (error) {
-      console.error('Failed to fetch requests', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const calculateTotal = () => {
-    const parts = parseFloat(quoteForm.partsEstimate) || 0;
-    const labor = parseFloat(quoteForm.laborEstimate) || 0;
-    setQuoteForm(prev => ({ ...prev, totalEstimate: (parts + labor).toFixed(2) }));
-  };
-
-  const handleSubmitQuote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedRequest) return;
-
-    try {
-      await api.post(`/quotes/requests/${selectedRequest.id}/respond`, {
-        ...quoteForm,
-        totalEstimate: parseFloat(quoteForm.totalEstimate)
-      });
-      
-      Swal.fire({
-        ...themeConfig,
-        icon: 'success',
-        title: 'Quote Sent!',
-        text: 'The driver has been notified of your estimate.',
-      });
-      
-      setSelectedRequest(null);
-      setQuoteForm({ description: '', partsEstimate: '', laborEstimate: '', totalEstimate: '', validUntil: '' });
-      fetchRequests(); // Refresh - request will move to 'responded' tab
-    } catch (error: any) {
-      Swal.fire({
-        ...themeConfig,
-        icon: 'error',
-        title: 'Failed to send quote',
-        text: error.response?.data?.message || 'Unknown error',
-        confirmButtonColor: '#ef4444',
-      });
-    }
-  };
-
-  const handleTabChange = (tab: RequestTab) => {
-    setActiveTab(tab);
-  };
-
-  return (
-    <div className="animate-in fade-in duration-500">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-black uppercase italic tracking-tighter">
-            Incoming <span className="text-primary">Requests</span>
-          </h1>
-          <p className="text-slate-400">Review vehicle issues and send quotes to potential customers</p>
+    };
+  
+    const calculateTotal = () => {
+      const parts = parseFloat(quoteForm.partsEstimate) || 0;
+      const labor = parseFloat(quoteForm.laborEstimate) || 0;
+      setQuoteForm(prev => ({ ...prev, totalEstimate: (parts + labor).toFixed(2) }));
+    };
+  
+    const handleSubmitQuote = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedRequest) return;
+  
+      try {
+        await api.post(`/quotes/requests/${selectedRequest.id}/respond`, {
+          ...quoteForm,
+          totalEstimate: parseFloat(quoteForm.totalEstimate)
+        });
+        
+        Swal.fire({
+          ...themeConfig,
+          icon: 'success',
+          title: 'Quote Sent!',
+          text: 'The driver has been notified of your estimate.',
+        });
+        
+        setSelectedRequest(null);
+        setQuoteForm({ description: '', partsEstimate: '', laborEstimate: '', totalEstimate: '', validUntil: '' });
+        fetchRequests(); // Refresh - request will move to 'responded' tab
+      } catch (error: any) {
+        Swal.fire({
+          ...themeConfig,
+          icon: 'error',
+          title: 'Failed to send quote',
+          text: error.response?.data?.message || 'Unknown error',
+          confirmButtonColor: '#ef4444',
+        });
+      }
+    };
+  
+    const handleTabChange = (tab: RequestTab) => {
+      setActiveTab(tab);
+    };
+  
+    return (
+      <div className="animate-in fade-in duration-500">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-black uppercase italic tracking-tighter">
+              Incoming <span className="text-primary">Requests</span>
+            </h1>
+            <p className="text-slate-400">Review vehicle issues and send quotes to potential customers</p>
+          </div>
+          <div className="join">
+            <button 
+              className={`btn join-item ${activeTab === 'open' ? 'btn-active btn-primary' : ''}`}
+              onClick={() => handleTabChange('open')}
+            >
+              Open
+            </button>
+            <button 
+              className={`btn join-item ${activeTab === 'responded' ? 'btn-active btn-primary' : ''}`}
+              onClick={() => handleTabChange('responded')}
+            >
+              Responded
+            </button>
+            <button 
+              className={`btn join-item ${activeTab === 'history' ? 'btn-active btn-primary' : ''}`}
+              onClick={() => handleTabChange('history')}
+            >
+              History
+            </button>
+          </div>
         </div>
-        <div className="join">
-          <button 
-            className={`btn join-item ${activeTab === 'open' ? 'btn-active btn-primary' : ''}`}
-            onClick={() => handleTabChange('open')}
-          >
-            Open
-          </button>
-          <button 
-            className={`btn join-item ${activeTab === 'responded' ? 'btn-active btn-primary' : ''}`}
-            onClick={() => handleTabChange('responded')}
-          >
-            Responded
-          </button>
-          <button 
-            className={`btn join-item ${activeTab === 'won' ? 'btn-active btn-primary' : ''}`}
-            onClick={() => handleTabChange('won')}
-          >
-            Won
-          </button>
-        </div>
-      </div>
 
       <div className="grid md:grid-cols-3 gap-6">
         {/* Request List */}

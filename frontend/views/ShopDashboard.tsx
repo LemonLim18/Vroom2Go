@@ -25,6 +25,14 @@ import {
 } from 'lucide-react';
 import { ShopQuoteRequestsView } from './ShopQuoteRequestsView';
 
+// Helper to format date as YYYY-MM-DD without timezone conversion
+const formatLocalDate = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 type DashboardTab = 'overview' | 'messages' | 'quotes' | 'bookings' | 'reviews' | 'calendar' | 'analytics';
 
 const revenueData = [
@@ -74,6 +82,12 @@ export const ShopDashboard: React.FC = () => {
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<QuoteRequest | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [selectedBookingForReschedule, setSelectedBookingForReschedule] = useState<any | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleSlots, setRescheduleSlots] = useState<any[]>([]);
+  const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false);
+  const [selectedRescheduleSlotId, setSelectedRescheduleSlotId] = useState<string>('');
   const [quoteRequests, setQuoteRequests] = useState<any[]>([]);
   const [shopMetrics, setShopMetrics] = useState({
     weeklyRevenue: 0,
@@ -106,6 +120,7 @@ export const ShopDashboard: React.FC = () => {
   const [timeSlots, setTimeSlots] = useState<any[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [creatingSlot, setCreatingSlot] = useState(false);
+  const [deletingSlotId, setDeletingSlotId] = useState<number | null>(null);
   const [shopId, setShopId] = useState<number | null>(null);
 
   // Fetch shop ID for the current user
@@ -127,7 +142,7 @@ export const ShopDashboard: React.FC = () => {
     const fetchSlots = async () => {
       setLoadingSlots(true);
       try {
-        const startDate = weekStart.toISOString().split('T')[0];
+        const startDate = formatLocalDate(weekStart);
         const { data } = await api.get(`/shops/${shopId}/availability/week?startDate=${startDate}`);
         setTimeSlots(data);
       } catch (error) {
@@ -137,6 +152,10 @@ export const ShopDashboard: React.FC = () => {
       }
     };
     fetchSlots();
+    
+    // Auto-refresh every 30 seconds to catch reschedule updates
+    const interval = setInterval(fetchSlots, 30000);
+    return () => clearInterval(interval);
   }, [shopId, weekStart]);
   
   // Fetch real quote requests
@@ -246,21 +265,65 @@ export const ShopDashboard: React.FC = () => {
           }
       }
       
-      // For CANCELLED status, also confirm
+      // For CANCELLED status - different handling for different booking states
       if (newStatus === 'CANCELLED') {
-          const result = await Swal.fire({
-              ...themeConfig,
-              title: 'Decline this booking?',
-              text: 'The customer will be notified that the booking was declined.',
-              icon: 'warning',
-              showCancelButton: true,
-              confirmButtonColor: '#ef4444', // Red for decline
-              confirmButtonText: 'Yes, decline',
-              cancelButtonText: 'Keep it',
-          });
+          // Check current booking status
+          const booking = shopBookings.find((b: any) => b.id === bookingId);
+          const isPending = booking?.status === 'PENDING';
           
-          if (!result.isConfirmed) {
-              return;
+          if (isPending) {
+              // Pending bookings can be declined more easily
+              const result = await Swal.fire({
+                  ...themeConfig,
+                  title: 'Decline this request?',
+                  text: 'This is a new booking request. The customer will be notified that you are unable to accommodate them.',
+                  icon: 'warning',
+                  showCancelButton: true,
+                  confirmButtonColor: '#ef4444',
+                  confirmButtonText: 'Decline Request',
+                  cancelButtonText: 'Keep it',
+              });
+              
+              if (!result.isConfirmed) return;
+          } else {
+              // Confirmed or In-Progress bookings need more care
+              const result = await Swal.fire({
+                  ...themeConfig,
+                  title: 'Cancel confirmed booking?',
+                  html: `
+                    <p class="mb-4">This customer has already confirmed their booking. Please provide a reason:</p>
+                    <textarea id="cancel-reason" class="swal2-textarea" placeholder="Reason for cancellation (e.g., equipment issue, emergency closure)..." style="min-height: 80px;"></textarea>
+                    <p class="text-xs text-slate-400 mt-4">💡 Consider messaging the customer first to discuss alternatives or reschedule options.</p>
+                  `,
+                  icon: 'warning',
+                  showCancelButton: true,
+                  confirmButtonColor: '#ef4444',
+                  confirmButtonText: 'Cancel Booking',
+                  cancelButtonText: 'Go Back',
+                  showDenyButton: true,
+                  denyButtonText: 'Message Customer Instead',
+                  denyButtonColor: '#3b82f6',
+                  preConfirm: () => {
+                      const reason = (document.getElementById('cancel-reason') as HTMLTextAreaElement)?.value;
+                      if (!reason || reason.trim().length < 10) {
+                          Swal.showValidationMessage('Please provide a reason (at least 10 characters)');
+                          return false;
+                      }
+                      return reason;
+                  }
+              });
+              
+              if (result.isDenied) {
+                  // User chose to message customer instead
+                  setActiveTab('messages');
+                  showToast('Opening messages - please contact the customer');
+                  return;
+              }
+              
+              if (!result.isConfirmed) return;
+              
+              // Store reason for the API call (could be sent to backend)
+              console.log('Cancellation reason:', result.value);
           }
       }
       
@@ -560,7 +623,13 @@ export const ShopDashboard: React.FC = () => {
                           {booking.status}
                         </span>
                         <span className="text-xs text-slate-500">
-                          {new Date(booking.scheduledDate).toLocaleDateString()} @ {new Date(booking.scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(booking.scheduledDate).toLocaleDateString()} @ {(() => {
+                            // FIX: Project UTC time onto today to avoid 1970 timezone issues
+                            const raw = new Date(booking.scheduledTime);
+                            const projected = new Date();
+                            projected.setUTCHours(raw.getUTCHours(), raw.getUTCMinutes(), 0, 0);
+                            return projected.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                          })()}
                         </span>
                       </div>
                       {/* Customer Name */}
@@ -866,30 +935,135 @@ export const ShopDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'].map(time => (
+                  {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'].map(time => {
+                    const hour = parseInt(time.split(':')[0]);
+                    const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+                    const period = hour >= 12 ? 'PM' : 'AM';
+                    const formattedTime = `${displayHour}:00 ${period}`;
+                    return (
                     <tr key={time}>
-                      <td className="font-medium">{time.replace(/^(\d+):/, (m, h) => `${parseInt(h) > 12 ? parseInt(h) - 12 : h}:${time.split(':')[1]} ${parseInt(h) >= 12 ? 'PM' : 'AM'}`)}</td>
+                      <td className="font-medium">{formattedTime}</td>
                       {[0, 1, 2, 3, 4, 5].map(offset => {
                         const day = new Date(weekStart);
                         day.setDate(day.getDate() + offset);
-                        const dateStr = day.toISOString().split('T')[0];
+                        const dateStr = formatLocalDate(day);
                         
                         // Find slot for this day/time
+                        // FIX: Project UTC time onto current date to avoid historical timezone offsets (1970 was +7.5)
                         const slot = timeSlots.find(s => {
-                          const slotDate = new Date(s.date).toISOString().split('T')[0];
-                          const slotTime = new Date(s.startTime).toTimeString().substring(0, 5);
-                          return slotDate === dateStr && slotTime === time;
+                          const sDate = new Date(s.date);
+                          const sTimeRaw = new Date(s.startTime);
+                          
+                          // Project to TODAY to use modern timezone (UTC+8)
+                          const sTime = new Date();
+                          sTime.setUTCHours(sTimeRaw.getUTCHours(), sTimeRaw.getUTCMinutes(), 0, 0);
+                          
+                          // Match Date (Local)
+                          const isDateMatch = 
+                            sDate.getDate() === day.getDate() &&
+                            sDate.getMonth() === day.getMonth() &&
+                            sDate.getFullYear() === day.getFullYear();
+
+                          // Match Time (Local - now correctly using modern offset)
+                          const h = sTime.getHours().toString().padStart(2, '0');
+                          const m = sTime.getMinutes().toString().padStart(2, '0');
+                          const isTimeMatch = `${h}:${m}` === time;
+                          
+                          return isDateMatch && isTimeMatch;
                         });
 
                         return (
                           <td key={offset} className="text-center p-1">
                             {slot ? (
                               slot.isBooked ? (
-                                <div className="tooltip" data-tip={`${slot.booking?.user?.name || 'Customer'} - ${slot.booking?.vehicle?.make || ''}`}>
-                                  <span className="badge badge-primary badge-sm cursor-help">Booked</span>
+                                <div className="dropdown dropdown-hover">
+                                  <div tabIndex={0} role="button" className={`badge badge-sm cursor-pointer hover:brightness-110 transition-all ${
+                                    slot.booking?.status === 'PENDING' ? 'badge-warning text-black' : 
+                                    slot.booking?.status === 'CONFIRMED' ? 'badge-info text-white' : 
+                                    slot.booking?.status === 'COMPLETED' ? 'badge-success text-white' : 'badge-primary'
+                                  }`}>
+                                    {slot.booking?.status === 'PENDING' ? 'Pending' : 'Booked'}
+                                  </div>
+                                  <ul tabIndex={0} className="dropdown-content z-20 menu p-2 shadow-xl bg-slate-800 rounded-xl w-64 border border-white/10">
+                                    <li className="menu-title text-xs flex items-center gap-2">
+                                      <span className={`w-2 h-2 rounded-full animate-pulse ${
+                                        slot.booking?.status === 'PENDING' ? 'bg-orange-400' : 'bg-blue-400'
+                                      }`}></span>
+                                      <span>{slot.booking?.user?.name || 'Customer'}</span>
+                                    </li>
+                                    <li className="text-xs text-slate-400 px-4 pb-2">
+                                      {slot.booking?.vehicle?.make} {slot.booking?.vehicle?.model}
+                                      {slot.booking?.vehicle?.year && ` (${slot.booking.vehicle.year})`}
+                                    </li>
+                                    <div className="divider my-1 px-2"></div>
+                                    <li>
+                                      <button 
+                                        onClick={() => {
+                                          // Navigate to messages with this customer
+                                          setActiveTab('messages');
+                                          showToast('Opening chat with customer...');
+                                        }}
+                                        className="flex items-center gap-2"
+                                      >
+                                        <MessageSquare className="w-4 h-4" />
+                                        Message Customer
+                                      </button>
+                                    </li>
+                                    <li>
+                                      <button 
+                                        onClick={() => {
+                                          if (!slot.booking) return;
+                                          setSelectedBookingForReschedule({
+                                            ...slot.booking,
+                                            scheduledDate: slot.date,
+                                            scheduledTime: slot.startTime
+                                          });
+                                          setShowRescheduleModal(true);
+                                        }}
+                                        className="flex items-center gap-2"
+                                      >
+                                        <Calendar className="w-4 h-4" />
+                                        Propose Reschedule
+                                      </button>
+                                    </li>
+                                    <div className="divider my-1 px-2"></div>
+                                    <li className="text-[10px] text-slate-500 px-4 py-1">
+                                      💡 To cancel, please message the customer first to discuss alternatives.
+                                    </li>
+                                  </ul>
                                 </div>
                               ) : (
-                                <span className="badge badge-success badge-sm">Available</span>
+                                <div className="dropdown dropdown-hover">
+                                  <div tabIndex={0} role="button" className="badge badge-success badge-sm cursor-pointer hover:badge-error transition-colors">
+                                    {deletingSlotId === slot.id ? <span className="loading loading-spinner loading-xs" /> : 'Available'}
+                                  </div>
+                                  <ul tabIndex={0} className="dropdown-content z-20 menu p-2 shadow-xl bg-slate-800 rounded-xl w-44 border border-white/10">
+                                    <li>
+                                      <button 
+                                        onClick={async () => {
+                                          if (deletingSlotId) return;
+                                          setDeletingSlotId(slot.id);
+                                          try {
+                                            await api.delete(`/shops/availability/${slot.id}`);
+                                            // Refresh slots
+                                            const startDate = formatLocalDate(weekStart);
+                                            const { data } = await api.get(`/shops/${shopId}/availability/week?startDate=${startDate}`);
+                                            setTimeSlots(data);
+                                            showToast('Slot removed');
+                                          } catch (error) {
+                                            console.error('Failed to delete slot', error);
+                                            showToast('Failed to remove slot', 'error');
+                                          } finally {
+                                            setDeletingSlotId(null);
+                                          }
+                                        }}
+                                        className="text-error hover:bg-error/20"
+                                      >
+                                        Remove Slot
+                                      </button>
+                                    </li>
+                                  </ul>
+                                </div>
                               )
                             ) : (
                               <button 
@@ -902,7 +1076,7 @@ export const ShopDashboard: React.FC = () => {
                                       slots: [{ date: dateStr, startTime: time, endTime: `${endHour}:00` }]
                                     });
                                     // Refresh slots
-                                    const startDate = weekStart.toISOString().split('T')[0];
+                                    const startDate = formatLocalDate(weekStart);
                                     const { data } = await api.get(`/shops/${shopId}/availability/week?startDate=${startDate}`);
                                     setTimeSlots(data);
                                     showToast('Slot created!');
@@ -923,7 +1097,8 @@ export const ShopDashboard: React.FC = () => {
                         );
                       })}
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             )}
@@ -935,15 +1110,15 @@ export const ShopDashboard: React.FC = () => {
               <h4 className="font-bold mb-3">Today's Schedule</h4>
               <div className="space-y-2">
                 {timeSlots.filter(s => {
-                  const today = new Date().toISOString().split('T')[0];
-                  const slotDate = new Date(s.date).toISOString().split('T')[0];
+                  const today = formatLocalDate(new Date());
+                  const slotDate = formatLocalDate(new Date(s.date));
                   return slotDate === today && s.isBooked;
                 }).length === 0 ? (
                   <p className="text-slate-500 text-sm">No bookings today</p>
                 ) : (
                   timeSlots.filter(s => {
-                    const today = new Date().toISOString().split('T')[0];
-                    const slotDate = new Date(s.date).toISOString().split('T')[0];
+                    const today = formatLocalDate(new Date());
+                    const slotDate = formatLocalDate(new Date(s.date));
                     return slotDate === today && s.isBooked;
                   }).map(slot => (
                     <div key={slot.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
@@ -1234,6 +1409,172 @@ export const ShopDashboard: React.FC = () => {
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowEditScheduleModal(false)} className="btn btn-ghost flex-1">Cancel</button>
               <button onClick={() => { showToast('Schedule updated successfully!'); setShowEditScheduleModal(false); }} className="btn btn-primary flex-1">Save Schedule</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Reschedule Modal - SLOT-BASED */}
+      {showRescheduleModal && selectedBookingForReschedule && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-white/10">
+            <h2 className="text-2xl font-bold mb-4">Propose Reschedule</h2>
+            <div className="bg-slate-800/50 p-4 rounded-xl mb-4">
+              <p className="text-sm text-slate-400">Current Booking:</p>
+              <p className="font-bold">
+                {new Date(selectedBookingForReschedule.scheduledDate).toLocaleDateString()} @ {(() => {
+                    const raw = new Date(selectedBookingForReschedule.scheduledTime);
+                    const projected = new Date();
+                    projected.setUTCHours(raw.getUTCHours(), raw.getUTCMinutes(), 0, 0);
+                    return projected.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                })()}
+              </p>
+              <p className="text-xs text-slate-500">{selectedBookingForReschedule.vehicle?.make} {selectedBookingForReschedule.vehicle?.model}</p>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Date Selection */}
+              <div className="form-control">
+                <label className="label"><span className="label-text">Select Available Date</span></label>
+                <input 
+                  type="date" 
+                  className="input input-bordered bg-slate-800 border-white/10" 
+                  value={rescheduleDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={async (e) => {
+                    const date = e.target.value;
+                    setRescheduleDate(date);
+                    setSelectedRescheduleSlotId('');
+                    
+                    if (!date || !shopId) return;
+                    
+                    // Fetch available slots for this date
+                    setLoadingRescheduleSlots(true);
+                    try {
+                      const { data } = await api.get(`/shops/${shopId}/availability?date=${date}`);
+                      // Only show unbooked slots
+                      const available = data.filter((s: any) => !s.isBooked);
+                      setRescheduleSlots(available);
+                    } catch (error) {
+                      console.error('Failed to fetch slots', error);
+                      setRescheduleSlots([]);
+                      showToast('Failed to load available slots', 'error');
+                    } finally {
+                      setLoadingRescheduleSlots(false);
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Time Slot Selection */}
+              {rescheduleDate && (
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Select Available Time Slot</span></label>
+                  <div className={`grid grid-cols-3 gap-2 ${loadingRescheduleSlots ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {loadingRescheduleSlots ? (
+                      <div className="col-span-full text-center py-4">
+                        <span className="loading loading-dots loading-md text-primary" />
+                      </div>
+                    ) : rescheduleSlots.length > 0 ? (
+                      rescheduleSlots.map(slot => {
+                        const slotDate = new Date(slot.startTime);
+                        const time = new Date();
+                        time.setUTCHours(slotDate.getUTCHours(), slotDate.getUTCMinutes(), 0, 0);
+                        const timeStr = time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                        const isSelected = selectedRescheduleSlotId === slot.id.toString();
+                        
+                        return (
+                          <button
+                            key={slot.id}
+                            onClick={() => setSelectedRescheduleSlotId(slot.id.toString())}
+                            className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-ghost bg-slate-800 border-white/10'}`}
+                          >
+                            <Clock className="w-3 h-3" /> {timeStr}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="col-span-full text-center py-6 border border-dashed border-white/10 rounded-xl bg-slate-800/30">
+                        <AlertCircle className="w-8 h-8 mx-auto mb-2 text-warning opacity-50" />
+                        <p className="text-sm text-slate-400">No available slots for this date</p>
+                        <p className="text-xs text-slate-500 mt-1">Please add slots to your calendar first</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Reason/Message */}
+              <div className="form-control">
+                <label className="label"><span className="label-text">Message to Customer</span></label>
+                <textarea 
+                  className="textarea textarea-bordered bg-slate-800 border-white/10 h-24" 
+                  placeholder="e.g. Sorry, we are double booked. Would this time work for you?"
+                  id="reschedule-reason"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button 
+                onClick={() => { 
+                  setShowRescheduleModal(false); 
+                  setSelectedBookingForReschedule(null);
+                  setRescheduleDate('');
+                  setRescheduleSlots([]);
+                  setSelectedRescheduleSlotId('');
+                }} 
+                className="btn btn-ghost flex-1"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                   if (!rescheduleDate || !selectedRescheduleSlotId) {
+                     showToast('Please select date and time slot', 'error');
+                     return;
+                   }
+                   
+                   const selectedSlot = rescheduleSlots.find(s => s.id.toString() === selectedRescheduleSlotId);
+                   if (!selectedSlot) {
+                     showToast('Invalid slot selection', 'error');
+                     return;
+                   }
+                   
+                   // Format time from slot
+                   const slotDate = new Date(selectedSlot.startTime);
+                   const time = new Date();
+                   time.setUTCHours(slotDate.getUTCHours(), slotDate.getUTCMinutes(), 0, 0);
+                   const timeString = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+                   
+                   const reason = (document.getElementById('reschedule-reason') as HTMLTextAreaElement)?.value || '';
+                   
+                   // Logic to send message / persist proposal
+                   const proposalText = `\n\n[RESCHEDULE PROPOSED]\nNew Date: ${rescheduleDate}\nNew Time: ${timeString}\nMessage: ${reason}`;
+                   const updatedNotes = (selectedBookingForReschedule.notes || '') + proposalText;
+
+                   try {
+                     // Update booking notes with reschedule proposal
+                     await api.put(`/bookings/${selectedBookingForReschedule.id}/status`, {
+                        status: selectedBookingForReschedule.status, // Keep status same
+                        notes: updatedNotes
+                     });
+                     showToast('Reschedule proposal sent to customer!');
+                   } catch (err) {
+                     console.error('Failed to propose reschedule', err);
+                     showToast('Failed to send proposal', 'error');
+                   }
+                   
+                   setShowRescheduleModal(false); 
+                   setSelectedBookingForReschedule(null);
+                   setRescheduleDate('');
+                   setRescheduleSlots([]);
+                   setSelectedRescheduleSlotId('');
+                }} 
+                disabled={!rescheduleDate || !selectedRescheduleSlotId}
+                className="btn btn-primary flex-1 gap-2"
+              >
+                <Send className="w-4 h-4" /> Send Proposal
+              </button>
             </div>
           </div>
         </div>

@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
+import fs from 'fs';
 import { PrismaClient, BookingStatus, JobStatus } from '@prisma/client';
-import { notifyBookingStatusChange, notifyBookingConfirmed } from './notification.controller';
+import { notifyBookingStatusChange, notifyBookingConfirmed, notifyBookingCancelled } from './notification.controller';
+import { bookSlot, releaseSlot } from './availability.controller';
 
 const prisma = new PrismaClient();
 
@@ -27,6 +29,19 @@ export const createBooking = async (req: any, res: Response) => {
       return res.status(400).json({ message: 'Missing required booking fields' });
     }
 
+    // Check for existing booking for this quote to prevent unique constraint error
+    if (quoteId) {
+       const existing = await prisma.booking.findUnique({ where: { quoteId: parseInt(quoteId) } });
+       if (existing) {
+          return res.status(409).json({ message: 'A booking already exists for this quote.', bookingId: existing.id });
+       }
+    }
+
+    // Sanitize Booking Method to match Enum
+    const validMethods = ['DROP_OFF', 'WAIT', 'MOBILE'];
+    const safeMethod = validMethods.includes(method) ? method : 'DROP_OFF';
+
+    // 1. Create the booking first
     const booking = await prisma.booking.create({
       data: {
         userId: req.user.id,
@@ -36,15 +51,47 @@ export const createBooking = async (req: any, res: Response) => {
         quoteId: quoteId ? parseInt(quoteId) : null,
         scheduledDate: new Date(scheduledDate),
         scheduledTime: new Date(scheduledTime),
-        method: method || 'DROP_OFF',
+        method: safeMethod,
         notes,
         status: BookingStatus.PENDING
       }
     });
 
+    // 2. Update Quote Status to ACCEPTED (Move to History)
+    if (quoteId) {
+        try {
+            await prisma.quote.update({
+                where: { id: parseInt(quoteId) },
+                data: { status: 'ACCEPTED' }
+            });
+        } catch (quoteErr) {
+            console.error('Failed to update quote status:', quoteErr);
+        }
+    }
+
+    // 3. Reserve the availability slot
+    try {
+        if (req.body.timeSlotId) {
+             // Direct ID match (Robust)
+             await prisma.timeSlot.update({
+                 where: { id: parseInt(req.body.timeSlotId) },
+                 data: { isBooked: true, bookingId: booking.id }
+             });
+        } else {
+             // Fallback to legacy Date matching (Fragile due to Timezones)
+             const sTime = new Date(scheduledTime);
+             const dateParam = new Date(Date.UTC(sTime.getFullYear(), sTime.getMonth(), sTime.getDate()));
+             const timeParam = new Date(2000, 0, 1, sTime.getHours(), sTime.getMinutes(), 0);
+             await bookSlot(parseInt(shopId), dateParam, timeParam, booking.id);
+        }
+    } catch (slotError) {
+        console.warn('Failed to reserve time slot:', slotError);
+    }
+
     res.status(201).json(booking);
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    console.error('Create booking error:', error);
+    res.status(500).json({ message: error.message || 'Internal Server Error' });
   }
 };
 
@@ -55,16 +102,24 @@ export const createBooking = async (req: any, res: Response) => {
  */
 export const getMyBookings = async (req: any, res: Response) => {
   try {
+    console.log('[getMyBookings] REQ.USER:', JSON.stringify(req.user));
+    
     const where: any = {};
     
     // If shop owner, see shop's bookings. If user, see their own.
     if (req.user.role === 'SHOP') {
-      const shop = await prisma.shop.findUnique({ where: { userId: req.user.id } });
-      if (!shop) return res.status(404).json({ message: 'Shop not found' });
-      where.shopId = shop.id;
+      const shop = await prisma.shop.findUnique({ where: { userId: parseInt(req.user.id) } });
+      if (shop) {
+         where.shopId = shop.id;
+      } else {
+         // Fallback: If role is SHOP but no shop profile exists (or they are acting as a user), show their user bookings
+         where.userId = parseInt(req.user.id);
+      }
     } else {
-      where.userId = req.user.id;
+      where.userId = parseInt(req.user.id);
     }
+
+    console.log('[getMyBookings] Fetching bookings with where:', where);
 
     const bookings = await prisma.booking.findMany({
       where,
@@ -75,11 +130,20 @@ export const getMyBookings = async (req: any, res: Response) => {
         user: { select: { id: true, name: true, email: true, phone: true } },
         quote: { select: { totalEstimate: true } }
       },
-      orderBy: { scheduledDate: 'desc' }
+      orderBy: { createdAt: 'desc' }
     });
+
+    console.log(`[getMyBookings] Found ${bookings.length} bookings`);
+    // Debug log one to see structure
+    if (bookings.length > 0) {
+        console.log('[getMyBookings] First booking sample:', JSON.stringify(bookings[0], null, 2));
+    }
 
     res.json(bookings);
   } catch (error: any) {
+    const msg = `[${new Date().toISOString()}] getMyBookings Error: ${error.message}\nStack: ${error.stack}\nUser: ${JSON.stringify(req.user)}\n`;
+    try { fs.appendFileSync('backend_error.log', msg); } catch(e) { console.error('Failed to write log', e); }
+    console.error('getMyBookings Error:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -127,7 +191,7 @@ export const getBookingById = async (req: any, res: Response) => {
  */
 export const updateBookingStatus = async (req: any, res: Response) => {
   try {
-    const { status } = req.body;
+    const { status, notes } = req.body;
 
     const booking = await prisma.booking.findUnique({
       where: { id: parseInt(req.params.id) },
@@ -145,8 +209,20 @@ export const updateBookingStatus = async (req: any, res: Response) => {
 
     const updatedBooking = await prisma.booking.update({
       where: { id: booking.id },
-      data: { status: status as BookingStatus }
+      data: { 
+        status: status as BookingStatus,
+        notes: notes !== undefined ? notes : undefined // Update notes if provided
+      }
     });
+
+    // If booking is cancelled, release the time slot
+    if (status === 'CANCELLED') {
+      try {
+        await releaseSlot(booking.id);
+      } catch (releaseErr) {
+        console.warn('Failed to release time slot:', releaseErr);
+      }
+    }
 
     // Create a job update record too
     await prisma.jobUpdate.create({
@@ -170,6 +246,209 @@ export const updateBookingStatus = async (req: any, res: Response) => {
     }
 
     res.json(updatedBooking);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Reschedule a booking (Customer Accepts Proposal)
+ * @route   PUT /api/bookings/:id/reschedule
+ * @access  Private (User/Shop)
+ */
+export const rescheduleBooking = async (req: any, res: Response) => {
+  try {
+    console.log(`[Reschedule] ===== RESCHEDULE REQUEST RECEIVED =====`);
+    console.log(`[Reschedule] Booking ID: ${req.params.id}`);
+    console.log(`[Reschedule] Request body:`, req.body);
+    console.log(`[Reschedule] User ID: ${req.user?.id}, Role: ${req.user?.role}`);
+    
+    const { newDate, newTime } = req.body; // YYYY-MM-DD, HH:MM
+    const bookingId = parseInt(req.params.id);
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { shop: true }
+    });
+
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+    // 1. Release Old Slot
+    if (booking.status !== 'CANCELLED') {
+         await prisma.timeSlot.updateMany({
+           where: { bookingId: booking.id },
+           data: { isBooked: false, bookingId: null }
+        });
+    }
+
+    // 2. Find and Book New Slot
+    // Parse newTime "HH:MM"
+    const [h, m] = newTime.split(':').map(Number);
+    
+    // Use UTC Midnight for Date matching
+    const searchDate = new Date(newDate); // YYYY-MM-DD
+    const dateParam = new Date(Date.UTC(searchDate.getFullYear(), searchDate.getMonth(), searchDate.getDate()));
+    
+    console.log(`[Reschedule] Looking for slot: shopId=${booking.shopId}, date=${dateParam.toISOString()}, hour=${h}, minute=${m}`);
+
+    // Query ALL slots for this shop/date and find one matching the hour/minute
+    const allSlotsForDate = await prisma.timeSlot.findMany({
+       where: {
+          shopId: booking.shopId,
+          date: dateParam
+       }
+    });
+    
+    console.log(`[Reschedule] Found ${allSlotsForDate.length} slots for this shop/date`);
+    
+    // Find the slot that matches the requested hour/minute
+    // The time is stored in UTC, so we need to compare UTC hours
+    // Frontend sends local time (e.g. 12:00 in UTC+8), which is stored as 04:00 UTC
+    const targetUtcHour = h - 8; // Adjust for UTC+8 (Singapore)
+    const adjustedHour = targetUtcHour < 0 ? targetUtcHour + 24 : targetUtcHour;
+    
+    let newSlot = allSlotsForDate.find(slot => {
+       const slotTime = new Date(slot.startTime);
+       const slotHour = slotTime.getUTCHours();
+       const slotMinute = slotTime.getUTCMinutes();
+       console.log(`  - Slot ID ${slot.id}: UTC hour=${slotHour}, minute=${slotMinute}, isBooked=${slot.isBooked}`);
+       return slotHour === adjustedHour && slotMinute === m && !slot.isBooked;
+    });
+    
+    // Also try direct hour match (in case times are stored as local)
+    if (!newSlot) {
+       console.log(`[Reschedule] Trying direct hour match...`);
+       newSlot = allSlotsForDate.find(slot => {
+          const slotTime = new Date(slot.startTime);
+          const slotHour = slotTime.getHours(); // Local hours
+          const slotMinute = slotTime.getMinutes();
+          return slotHour === h && slotMinute === m && !slot.isBooked;
+       });
+    }
+
+    if (newSlot) {
+       console.log(`[Reschedule] FOUND matching slot ID ${newSlot.id}`);
+    }
+
+    // Enforce slot-based scheduling: workshop must mark times as available FIRST
+    if (!newSlot) {
+       console.log(`[Reschedule] No matching slot found for ${newDate} @ ${newTime}`);
+       return res.status(404).json({ 
+         message: 'Proposed time slot is not available. Workshop must add this time to their availability calendar first.',
+         details: {
+           date: newDate,
+           time: newTime,
+           shopId: booking.shopId
+         }
+       });
+    }
+
+    if (newSlot.isBooked) {
+        return res.status(409).json({ message: 'Target time slot is already taken!' });
+    }
+
+    // Book it
+    const updatedSlot = await prisma.timeSlot.update({
+        where: { id: newSlot.id },
+        data: { isBooked: true, bookingId: booking.id }
+    });
+    console.log(`[Reschedule] Slot ${updatedSlot.id} booked: isBooked=${updatedSlot.isBooked}, bookingId=${updatedSlot.bookingId}`);
+
+    // 3. Update Booking
+    // Clean up the Proposal Note (remove the [RESCHEDULE PROPOSED] block)
+    const currentNotes = booking.notes || '';
+    const cleanedNotes = currentNotes.replace(/\[RESCHEDULE PROPOSED\][\s\S]*?(?=\n\n|$)/, '').trim() + 
+                        `\n\n[RESCHEDULED] Changed from ${new Date(booking.scheduledDate).toLocaleDateString()} to ${newDate} @ ${newTime}`;
+
+    const updated = await prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+            scheduledDate: new Date(newDate),
+            scheduledTime: new Date(`${newDate}T${newTime}:00`),
+            status: 'CONFIRMED',
+            notes: cleanedNotes
+        },
+        include: { user: { select: { name: true } } }
+    });
+
+    // Notify Shop Owner
+    try {
+      const { notifyRescheduleAccepted } = await import('./notification.controller');
+      notifyRescheduleAccepted(booking.shop.userId, updated.user?.name || 'Customer', newDate, newTime, booking.id);
+    } catch (e) { console.warn('Failed to send reschedule notification', e); }
+
+    res.json(updated);
+
+  } catch (error: any) {
+    console.error('Reschedule Error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * @desc    Cancel a booking (Driver)
+ * @route   PUT /api/bookings/:id/cancel
+ * @access  Private (Driver)
+ */
+export const cancelBooking = async (req: any, res: Response) => {
+  try {
+    const bookingId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { 
+        shop: { select: { userId: true, name: true } }, 
+        vehicle: true 
+      }
+    });
+
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+    if (booking.userId !== userId) return res.status(403).json({ message: 'Not authorized' });
+
+    if (booking.status === 'COMPLETED' || booking.status === 'CANCELLED') {
+        return res.status(400).json({ message: 'Booking cannot be cancelled' });
+    }
+
+    // Check cancellation policy (24 hours)
+    const now = new Date();
+    const scheduledTime = new Date(booking.scheduledTime);
+    const diffHours = (scheduledTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    const isLateCancellation = diffHours < 24;
+
+    const updatedBooking = await prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: 'CANCELLED' } 
+    });
+
+    // Release Slot
+    try {
+        await releaseSlot(bookingId);
+    } catch (e) { console.warn('Failed to release slot:', e); }
+
+    // Notify Shop Owner
+    try {
+        if (booking.shop.userId) {
+             notifyBookingCancelled(
+                 booking.shop.userId,
+                 req.user.name || 'Customer',
+                 bookingId,
+                 isLateCancellation
+             );
+        }
+    } catch (e) {
+        console.warn('Failed to notify shop:', e);
+    }
+
+    res.json({ 
+        booking: updatedBooking, 
+        refundStatus: isLateCancellation ? 'NON_REFUNDABLE' : 'REFUNDED',
+        message: isLateCancellation 
+            ? 'Booking cancelled. Deposit is non-refundable due to late cancellation.' 
+            : 'Booking cancelled successfully. Deposit will be refunded.' 
+    });
+
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

@@ -276,6 +276,8 @@ const App: React.FC = () => {
             // Fallback to local lookup if valid
             const shop = quoteShop || getShopById(quote.shopId);
             
+            console.log('[App] Accepteing quote, passing shop:', shop);
+            
             if (shop) {
               setSelectedShop(shop);
               setIsBooking(true);
