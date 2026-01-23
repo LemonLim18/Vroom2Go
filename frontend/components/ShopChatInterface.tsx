@@ -39,6 +39,12 @@ interface Message {
     link?: string;
     image?: string;
   };
+  replyTo?: {
+    id: number;
+    text: string;
+    senderName: string;
+  };
+  rawCreatedAt?: string; // ISO string for deduplication
 }
 
 interface ShopChatInterfaceProps {
@@ -54,9 +60,10 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [loading, setLoading] = useState(true);
-    const [pendingAttachment, setPendingAttachment] = useState<{ url: string; type: 'image' | 'pdf'; name: string } | null>(null);
+    const [pendingAttachment, setPendingAttachment] = useState<{ url: string; type: 'image' | 'pdf'; name: string; file?: File } | null>(null);
     const [uploading, setUploading] = useState(false);
     const initializedRef = useRef(false);
+    const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
     const checkUser = () => {
         const userStr = localStorage.getItem('user');
@@ -218,8 +225,33 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
         const handleReceive = (msg: any) => {
              // Deduplicate: If we already have this message (e.g. from optimistic update), ignore
              setMessages(prev => {
-                const isDuplicate = prev.some(m => m.id === msg.id || (m.text === msg.text && m.isMine && Math.abs(new Date(m.time).getTime() - new Date(msg.time).getTime()) < 5000));
-                if (isDuplicate) return prev;
+                const isDuplicate = prev.some(m => {
+                    if (m.id === msg.id) return true;
+                    // Fuzzy match for optimistic messages
+                    if (m.text === msg.text && m.isMine && m.senderId === msg.senderId) {
+                         const timeDiff = Math.abs(new Date(m.rawCreatedAt || m.time).getTime() - new Date(msg.time).getTime());
+                         return timeDiff < 5000;
+                    }
+                    return false;
+                });
+                
+                if (isDuplicate) {
+                    // Optionally update the optimistic message with the real ID and data
+                    return prev.map(m => {
+                        const isMatch = m.text === msg.text && m.isMine && m.senderId === msg.senderId && Math.abs(new Date(m.rawCreatedAt || m.time).getTime() - new Date(msg.time).getTime()) < 5000;
+                        if (m.id !== msg.id && isMatch) {
+                             return {
+                                 ...m,
+                                 id: msg.id,
+                                 time: new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                                 metadata: msg.metadata,
+                                 replyTo: msg.replyTo, // Update replyTo from server to be sure
+                                 rawCreatedAt: msg.time
+                             };
+                        }
+                        return m;
+                    });
+                }
                 
                 const type = msg.attachmentUrl?.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
                 const newMsg: Message = {
@@ -229,7 +261,10 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                     time: new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
                     isMine: msg.senderId === myUserId,
                     attachmentUrl: msg.attachmentUrl,
-                    attachmentType: msg.attachmentUrl ? type : undefined
+                    attachmentType: msg.attachmentUrl ? type : undefined,
+                    metadata: msg.metadata,
+                    replyTo: msg.replyTo,
+                    rawCreatedAt: msg.time
                 };
                 return [...prev, newMsg];
              });
@@ -298,7 +333,13 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                             time: new Date(m.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
                             isMine: m.senderId === myUserId,
                             attachmentUrl: m.attachmentUrl,
-                            attachmentType: m.attachmentUrl ? type : undefined
+                            attachmentType: m.attachmentUrl ? type : undefined,
+                            metadata: m.metadata,
+                            replyTo: m.replyTo ? {
+                                id: m.replyTo.id,
+                                text: m.replyTo.message,
+                                senderName: m.replyTo.sender?.name || 'User'
+                            } : undefined
                         };
                     }));
                     scrollToBottom();
@@ -384,7 +425,13 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
             time: time,
             isMine: true,
             attachmentUrl: currentAttachment?.url, // Use blob for immediate display
-            attachmentType: currentAttachment?.type
+            attachmentType: currentAttachment?.type,
+            replyTo: replyingTo ? {
+                id: replyingTo.id,
+                text: replyingTo.text,
+                senderName: replyingTo.senderId === myUserId ? 'You' : conversations.find(c => c.id === selectedConvoId)?.user.name || 'User'
+            } : undefined,
+            rawCreatedAt: new Date().toISOString()
         };
 
         setMessages(prev => [...prev, optimisticMsg]);
@@ -495,9 +542,28 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                         {messages.length === 0 ? (
                            <div className="text-center text-slate-600 text-xs mt-4">Start of conversation history</div>
                         ) : (
-                           messages.map(msg => (
-                              <div key={msg.id} className={`chat ${msg.isMine ? 'chat-end' : 'chat-start'}`}>
-                                 <div className={`chat-bubble rounded-2xl ${msg.isMine ? 'bg-primary text-black font-medium' : 'bg-slate-800 text-white'}`}>
+                           messages.map(msg => {
+                              console.log('Rendering message:', msg.id, 'Metadata:', msg.metadata);
+                              return (
+                              <div key={msg.id} id={`msg-${msg.id}`} className={`chat ${msg.isMine ? 'chat-end' : 'chat-start'} group max-w-full`}>
+                                 <div className={`chat-bubble rounded-2xl ${msg.isMine ? 'bg-primary text-black font-medium' : 'bg-slate-800 text-white'} relative`}>
+                                    {/* Reply Context */}
+                                    {msg.replyTo && (
+                                      <div 
+                                        className={`text-xs mb-1 p-2 rounded-lg border-l-2 cursor-pointer transition-colors ${msg.isMine ? 'bg-black/10 border-black/20 hover:bg-black/20' : 'bg-black/20 border-primary/50 hover:bg-black/30'}`}
+                                        onClick={() => {
+                                            const el = document.getElementById(`msg-${msg.replyTo?.id}`);
+                                            if (el) {
+                                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                el.classList.add('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-slate-950');
+                                                setTimeout(() => el.classList.remove('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-slate-950'), 2000);
+                                            }
+                                        }}
+                                      >
+                                          <p className="font-bold text-[10px] opacity-75">{msg.replyTo.senderName}</p>
+                                          <p className="line-clamp-1 opacity-90">{msg.replyTo.text}</p>
+                                      </div>
+                                    )}
                                     {/* Show attachment if present */}
                                     {msg.attachmentUrl && msg.attachmentType === 'image' && (
                                       <img 
@@ -523,20 +589,34 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                                     {msg.metadata?.type === 'forum_post_share' && msg.metadata.link && (
                                       <a 
                                         href={msg.metadata.link}
-                                        className="block bg-slate-900/80 rounded-xl overflow-hidden border border-white/10 mb-2 hover:border-primary/30 transition-colors group"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="block w-[40vw] max-w-[400px] bg-slate-900/80 rounded-xl overflow-hidden border border-white/10 mb-2 hover:border-primary/30 transition-colors group p-3"
                                       >
-                                        <div className="flex gap-3 p-3">
+                                        <div className="flex flex-col gap-2">
+                                          {/* Title on Top */}
+                                          <p className="font-bold text-sm text-white group-hover:text-primary transition-colors line-clamp-2">
+                                              {msg.metadata.title}
+                                          </p>
+
+                                          {/* Image in Middle */}
                                           {msg.metadata.image && (
-                                            <img 
-                                              src={msg.metadata.image.startsWith('http') ? msg.metadata.image : `http://localhost:5000${msg.metadata.image}`} 
-                                              alt="" 
-                                              className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
-                                            />
+                                            <div className="w-full h-32 rounded-lg overflow-hidden bg-slate-950">
+                                                <img 
+                                                  src={msg.metadata.image.startsWith('http') ? msg.metadata.image : `http://localhost:5000${msg.metadata.image}`} 
+                                                  alt="" 
+                                                  className="w-full h-full object-cover"
+                                                />
+                                            </div>
                                           )}
-                                          <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-sm text-white group-hover:text-primary transition-colors line-clamp-1">{msg.metadata.title}</p>
-                                            <p className="text-xs text-slate-400 line-clamp-2 mt-0.5">{msg.metadata.content}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">By {msg.metadata.author} • Forum Post</p>
+
+                                          {/* Description on Bottom */}
+                                          <div className="min-w-0">
+                                            <p className="text-xs text-slate-400 line-clamp-3">{msg.metadata.content}</p>
+                                            <p className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
+                                                <span className="w-1 h-1 rounded-full bg-primary"></span>
+                                                By {msg.metadata.author} • Forum Post
+                                            </p>
                                           </div>
                                         </div>
                                       </a>
@@ -544,13 +624,38 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                                     
                                     {/* Regular text (hide if it's just a forum share link) */}
                                     {!(msg.metadata?.type === 'forum_post_share') && msg.text}
+                                    
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setReplyingTo(msg);
+                                        }}
+                                        className={`absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-full bg-slate-800 text-slate-400 hover:bg-primary hover:text-black shadow-lg z-20 ${msg.isMine ? '-left-10' : '-right-10'}`}
+                                        title="Reply"
+                                     >
+                                        <ChevronLeft className={`w-3 h-3 ${msg.isMine ? '' : 'rotate-180'}`} />
+                                     </button>
                                  </div>
                                  <div className="chat-footer opacity-50 text-[10px] mt-1">{msg.time}</div>
                               </div>
-                           ))
+                              );
+                           })
                         )}
                         <div ref={messagesEndRef} />
                      </div>
+
+                     {/* Reply Banner */}
+                     {replyingTo && (
+                        <div className="px-4 py-2 bg-slate-900/90 border-t border-white/5 flex justify-between items-center backdrop-blur-sm -mb-[1px] relative z-10 shrink-0">
+                            <div className="flex flex-col text-xs border-l-2 border-primary pl-2">
+                                <span className="text-primary font-bold">Replying to {replyingTo.senderId === myUserId ? 'You' : conversations.find(c => c.id === selectedConvoId)?.user.name || 'User'}</span>
+                                <span className="text-slate-400 line-clamp-1">{replyingTo.text}</span>
+                            </div>
+                            <button onClick={() => setReplyingTo(null)} className="btn btn-ghost btn-xs btn-circle text-slate-400 hover:text-white">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                     )}
 
                      {/* Input */}
                      <div className="p-4 bg-slate-900 border-t border-white/5">

@@ -148,11 +148,20 @@ export const getConversationById = async (req: any, res: Response) => {
         const conversationId = parseInt(req.params.id);
         const userId = req.user.id;
 
-        const conversation = await prisma.conversation.findUnique({
+        const conversation = await (prisma.conversation.findUnique as any)({
             where: { id: conversationId },
             include: {
                 messages: {
-                    orderBy: { createdAt: 'asc' }
+                    orderBy: { createdAt: 'asc' },
+                    include: {
+                        replyTo: {
+                            select: {
+                                id: true,
+                                message: true,
+                                sender: { select: { name: true } }
+                            }
+                        }
+                    }
                 },
                 user1: { select: { id: true, name: true, avatarUrl: true, role: true } },
                 user2: { select: { id: true, name: true, avatarUrl: true, role: true } },
@@ -165,6 +174,11 @@ export const getConversationById = async (req: any, res: Response) => {
                 }
             }
         });
+
+        if (conversation && conversation.messages.length > 0) {
+             const lastMsg = conversation.messages[conversation.messages.length - 1];
+             console.log('[DEBUG] getConversationById fetched messages:', conversation.messages.length, 'Last msg metadata:', (lastMsg as any).metadata);
+        }
 
         if (!conversation) {
             return res.status(404).json({ message: 'Conversation not found' });
@@ -191,7 +205,9 @@ export const getConversationById = async (req: any, res: Response) => {
 export const sendMessage = async (req: any, res: Response) => {
     try {
         const conversationId = parseInt(req.params.id);
-        const { text, attachmentUrl } = req.body;
+        const { text, attachmentUrl, metadata, replyToId } = req.body;
+        console.log('[DEBUG] sendMessage body:', { text, hasMetadata: !!metadata, metadata, replyToId }); // Log incoming payload
+
         const senderId = req.user.id;
 
         // Verify existence and access
@@ -207,49 +223,72 @@ export const sendMessage = async (req: any, res: Response) => {
              return res.status(403).json({ message: 'Not authorized' });
         }
         
-        const newMessage = await prisma.message.create({
-            data: {
-                conversationId,
-                senderId,
-                message: text,
-                attachmentUrl,
+        try { // Wrap create in try/catch to see specific Prisma errors if any
+            const newMessage = await prisma.message.create({
+                data: {
+                    conversationId,
+                    senderId,
+                    message: text,
+                    attachmentUrl,
+                    metadata: metadata || undefined,
+                    replyToId: replyToId ? parseInt(replyToId) : undefined,
+                    isRead: false
+                } as any
+            });
+            // Fetch the message again including the reply context for clients
+           const fullMessage = await (prisma.message.findUnique as any)({
+               where: { id: newMessage.id },
+               include: {
+                   replyTo: {
+                       select: {
+                           id: true,
+                           message: true,
+                           sender: { select: { name: true } }
+                       }
+                   }
+               }
+           });
+
+            console.log('[DEBUG] Message created:', newMessage.id, 'Metadata saved:', (newMessage as any).metadata);
+
+            // Update conversation lastMessageAt
+            await prisma.conversation.update({
+                where: { id: conversationId },
+                data: { lastMessageAt: new Date() }
+            });
+
+            const io = getIO();
+            const roomId = `conversation_${conversationId}`;
+            
+            const recipientId = conversation.user1Id === senderId ? conversation.user2Id : conversation.user1Id;
+            
+            const replyToData = (fullMessage as any)?.replyTo;
+            const socketPayload = {
+                id: newMessage.id,
+                conversationId: conversationId,
+                senderId: senderId,
+                text: newMessage.message,
+                attachmentUrl: newMessage.attachmentUrl,
+                metadata: (newMessage as any).metadata,
+                replyTo: replyToData ? {
+                    id: replyToData.id,
+                    text: replyToData.message,
+                    senderName: replyToData.sender?.name
+                } : undefined,
+                time: newMessage.createdAt,
                 isRead: false
-            }
-        });
+            };
 
-        // Update conversation lastMessageAt
-        await prisma.conversation.update({
-            where: { id: conversationId },
-            data: { lastMessageAt: new Date() }
-        });
+            io.to(roomId).emit('receive_message', socketPayload);
 
-        const io = getIO();
-        const roomId = `conversation_${conversationId}`;
-        
-        const recipientId = conversation.user1Id === senderId ? conversation.user2Id : conversation.user1Id;
-        
-        io.to(roomId).emit('receive_message', {
-            id: newMessage.id,
-            conversationId: conversationId,
-            senderId: senderId,
-            text: newMessage.message,
-            attachmentUrl: newMessage.attachmentUrl,
-            time: newMessage.createdAt,
-            isRead: false
-        });
+            // Also emit to recipient's personal room for layout/notification totalUnread sync
+            io.to(`user_${recipientId}`).emit('receive_message', socketPayload);
 
-        // Also emit to recipient's personal room for layout/notification totalUnread sync
-        io.to(`user_${recipientId}`).emit('receive_message', {
-            id: newMessage.id,
-            conversationId: conversationId,
-            senderId: senderId,
-            text: newMessage.message,
-            attachmentUrl: newMessage.attachmentUrl,
-            time: newMessage.createdAt,
-            isRead: false
-        });
-
-        res.json(newMessage);
+            res.json(fullMessage);
+        } catch (dbError) {
+            console.error('[DEBUG] Prisma Create Error:', dbError);
+            throw dbError;
+        }
     } catch (error: any) {
         console.error(error);
         res.status(500).json({ message: error.message });
