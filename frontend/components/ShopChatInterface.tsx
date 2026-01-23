@@ -30,6 +30,15 @@ interface Message {
   isMine: boolean;
   attachmentUrl?: string;
   attachmentType?: 'image' | 'pdf';
+  metadata?: {
+    type?: 'forum_post_share';
+    postId?: string | number;
+    title?: string;
+    content?: string;
+    author?: string;
+    link?: string;
+    image?: string;
+  };
 }
 
 interface ShopChatInterfaceProps {
@@ -509,7 +518,32 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                                         <span className="text-sm">View PDF Document</span>
                                       </a>
                                     )}
-                                    {msg.text}
+                                    
+                                    {/* Forum Post Share Preview */}
+                                    {msg.metadata?.type === 'forum_post_share' && msg.metadata.link && (
+                                      <a 
+                                        href={msg.metadata.link}
+                                        className="block bg-slate-900/80 rounded-xl overflow-hidden border border-white/10 mb-2 hover:border-primary/30 transition-colors group"
+                                      >
+                                        <div className="flex gap-3 p-3">
+                                          {msg.metadata.image && (
+                                            <img 
+                                              src={msg.metadata.image.startsWith('http') ? msg.metadata.image : `http://localhost:5000${msg.metadata.image}`} 
+                                              alt="" 
+                                              className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+                                            />
+                                          )}
+                                          <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-sm text-white group-hover:text-primary transition-colors line-clamp-1">{msg.metadata.title}</p>
+                                            <p className="text-xs text-slate-400 line-clamp-2 mt-0.5">{msg.metadata.content}</p>
+                                            <p className="text-[10px] text-slate-500 mt-1">By {msg.metadata.author} • Forum Post</p>
+                                          </div>
+                                        </div>
+                                      </a>
+                                    )}
+                                    
+                                    {/* Regular text (hide if it's just a forum share link) */}
+                                    {!(msg.metadata?.type === 'forum_post_share') && msg.text}
                                  </div>
                                  <div className="chat-footer opacity-50 text-[10px] mt-1">{msg.time}</div>
                               </div>

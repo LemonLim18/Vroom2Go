@@ -505,8 +505,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                 {booking.notes && !booking.notes.includes('[RESCHEDULE PROPOSED]') && (
                    <div className="mt-3 p-3 rounded-lg text-sm bg-slate-800/50 text-slate-400">
                       <span className="font-bold text-slate-300 mr-2">Notes:</span> 
-                      {booking.notes.replace(/\[RESCHEDULED\].*/, '')} 
-                      {/* Hide internal logs if needed, or just show all */}
+                      {booking.notes} 
                    </div>
                 )}
 

@@ -103,21 +103,49 @@ const detectKeyword = (text: string, keywords: string[]): boolean => {
 };
 
 // Initialization and model usage following @google/genai guidelines.
-export const generateMechanicAdvice = async (userQuery: string, context?: string): Promise<string> => {
+// Initialization and model usage following @google/genai guidelines.
+export const generateMechanicAdvice = async (userQuery: string, context?: string, images?: string[]): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey || apiKey.includes('PLACEHOLDER')) {
+      console.warn('Gemini API Key missing or placeholder. Using mock data.');
+      return getMockMechanicAdvice(userQuery);
+    }
+    const ai = new GoogleGenAI({ apiKey });
     
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: `You are a helpful, expert mechanic assistant on the Vroom2 Go platform. 
+    const parts: any[] = [];
+    
+    // Add images if present
+    if (images && images.length > 0) {
+        images.forEach(img => {
+            const cleanData = img.split(',')[1] || img;
+            parts.push({
+                inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: cleanData
+                }
+            });
+        });
+    }
+
+    parts.push({
+        text: `You are a helpful, expert mechanic assistant on the Vroom2 Go platform. 
       The user is asking a question about vehicle maintenance or repair.
       Context: ${context || 'General automotive inquiry'}
       
       User Question: ${userQuery}
       
-      Provide a concise, professional, and safety-conscious answer. 
-      If the issue sounds dangerous, advise them to visit a shop immediately.
-      Format the response in plain text with clear paragraphs.`,
+      Instructions:
+      1. If images are provided, analyze them for visible issues (wear, leaks, damage, rust).
+      2. Incorporate visual observations into your advice.
+      3. Provide a concise, professional, and safety-conscious answer. 
+      4. If the issue sounds dangerous, advise them to visit a shop immediately.
+      5. Format the response in plain text with clear paragraphs.`
+    });
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts },
     });
 
     return response.text || "I'm sorry, I couldn't generate advice at this moment.";
@@ -160,7 +188,11 @@ Would you like me to help you request quotes from local shops?`;
 
 export const analyzeSymptomImage = async (base64Image: string, description: string): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey || apiKey.includes('PLACEHOLDER')) {
+       return getMockImageAnalysis(description);
+    }
+    const ai = new GoogleGenAI({ apiKey });
     
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -215,7 +247,11 @@ Note: This is an AI assessment and may require physical confirmation.`;
 // NEW: Full damage detection with structured response
 export const analyzeDamage = async (base64Image: string, description: string): Promise<DamageAnalysis> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey || apiKey.includes('PLACEHOLDER')) {
+        return getMockDamageAnalysis(description);
+    }
+    const ai = new GoogleGenAI({ apiKey });
     
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -273,7 +309,11 @@ const getMockDamageAnalysis = (description: string): DamageAnalysis => {
 // NEW: Symptom-based analysis without image
 export const analyzeSymptoms = async (symptoms: string[], vehicleInfo?: string): Promise<SymptomAnalysis> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey || apiKey.includes('PLACEHOLDER')) {
+        return getMockSymptomAnalysis(symptoms);
+    }
+    const ai = new GoogleGenAI({ apiKey });
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
@@ -362,6 +402,65 @@ export const getPhotoQuoteEstimate = async (
 // Helper to format AI response for display
 export const formatCostRange = (range: { min: number; max: number }): string => {
   return `$${range.min.toLocaleString()} - $${range.max.toLocaleString()}`;
+};
+
+
+// NEW: Refine draft post with text and images
+export const improvePostDraft = async (
+  currentText: string, 
+  base64Images: string[]
+): Promise<{ title: string; content: string }> => {
+  try {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey || apiKey.includes('PLACEHOLDER')) {
+        return {
+          title: "Refined: " + currentText.substring(0, 20) + "...",
+          content: "Detailed description of: " + currentText + "\n(This is a mock refinement. Add API key for real AI.)"
+        };
+    }
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const parts: any[] = [];
+    
+    // Add images if present
+    base64Images.forEach(img => {
+      // Strip prefix if present (e.g. "data:image/jpeg;base64,")
+      const cleanData = img.split(',')[1] || img;
+      parts.push({
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: cleanData
+        }
+      });
+    });
+    
+    parts.push({
+      text: `You are an expert automotive service advisor. Rewrite the following user forum post to be professional, clear, and detailed.
+      
+      User Draft: "${currentText}"
+      
+      Instructions:
+      1. Create a catchy but descriptive Title.
+      2. Rewrite the Content to describe symptoms clearly. 
+      3. If images are attached, describe RELEVANT visible issues (rust, leaks, wear) in the content.
+      4. Return ONLY a JSON object: { "title": "...", "content": "..." }`
+    });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts }
+    });
+    
+    const jsonMatch = response.text?.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    throw new Error('Could not parse JSON response');
+
+  } catch (error) {
+    console.error("Post improvement error:", error);
+    return { title: '', content: '' }; // Handle gracefully in UI
+  }
 };
 
 export const formatUrgency = (urgency: string): { label: string; color: string } => {

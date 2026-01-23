@@ -76,8 +76,10 @@ const ServiceDetails: React.FC<{service: Service, onBack: () => void, onCompare:
 
 const App: React.FC = () => {
   // Helper to get view from URL path
+  // Helper to get view from URL path
   const getViewFromPath = () => {
     const path = window.location.pathname.replace('/', '');
+    if (path.startsWith('forum/post/')) return 'forum';
     return path || 'home';
   };
 
@@ -89,8 +91,12 @@ const App: React.FC = () => {
 
   // Sync URL path when view changes
   useEffect(() => {
+    const path = window.location.pathname;
+    // Don't overwrite deep links if we are already on the correct view
+    if (currentView === 'forum' && path.includes('/forum/post/')) return;
+    
     const newPath = `/${currentView}`;
-    if (window.location.pathname !== newPath) {
+    if (path !== newPath) {
       window.history.pushState(null, '', newPath);
     }
     localStorage.setItem('lastView', currentView);
@@ -371,6 +377,7 @@ const App: React.FC = () => {
               setSelectedShop(shop);
               window.scrollTo(0,0);
             }}
+            highlightPostId={window.location.pathname.includes('/forum/post/') ? window.location.pathname.split('/forum/post/')[1] : undefined}
           />
         );
       
@@ -389,6 +396,7 @@ const App: React.FC = () => {
               localStorage.removeItem('user');
               window.location.reload();
             }}
+            onNavigate={handleNavigate}
           />
         );
         if (currentRole === UserRole.SHOP) return <ShopProfileSettings />;

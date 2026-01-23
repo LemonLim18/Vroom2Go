@@ -40,6 +40,7 @@ interface ServiceHistoryItem {
   status: 'completed' | 'warranty';
   total: number;
   warrantyUntil?: string;
+  warrantyDaysRemaining?: number;
 }
 
 interface PaymentMethod {
@@ -68,9 +69,10 @@ const addMonths = (date: Date, months: number): Date => {
 interface UserProfileProps {
   onLogin?: () => void;
   onLogout?: () => void;
+  onNavigate?: (view: string, data?: any) => void;
 }
 
-export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) => {
+export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout, onNavigate }) => {
   const [activeTab, setActiveTab] = useState<ProfileTab>('vehicles');
   const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
   const [showEditVehicleModal, setShowEditVehicleModal] = useState(false);
@@ -82,48 +84,85 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
 
+  React.useEffect(() => {
+    const fetchData = async () => {
+        try {
+            const [userRes, vehiclesRes, bookingsRes] = await Promise.all([
+                api.get('/auth/me'),
+                api.get('/vehicles'),
+                api.get('/bookings') 
+            ]);
+            
+            setUser(userRes.data);
+            setVehicles(vehiclesRes.data);
+            setBookings(bookingsRes.data);
+        } catch (error) {
+            console.error('Failed to load profile data', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+    fetchData();
+  }, []);
+
   // Derived Metrics from Bookings
   const { totalServices, totalSpent, estSavings, serviceHistoryItems, activeWarranties } = React.useMemo(() => {
     let tServices = 0;
     let tSpent = 0;
     const historyItems: ServiceHistoryItem[] = [];
 
-    bookings.forEach(booking => {
+    bookings.forEach((booking: any) => {
       // Only count completed work towards history and spend
-      if (booking.status === 'Completed' || booking.status === 'In Progress' || booking.status === 'Confirmed') { // Including confirmed for visibility if desired, but strictly usually 'Completed'
-         // Using 'Completed' strictly for spend is safer, but for "Total Services" user might expect all non-cancelled. 
-         // Let's stick to Completed for spend, but all non-cancelled for history list.
-      }
+      // Statuses from backend are uppercase: COMPLETED, IN_PROGRESS, CONFIRMED, PENDING, CANCELLED
       
-      const price = parsePrice(booking.price || booking.estimatedTotal);
+      let price = parsePrice(booking.price || booking.estimatedTotal || booking.quote?.totalEstimate);
+      // Fallback: if price is 0, maybe it's in a different field or needs specific parsing
+      if (price === 0 && booking.service?.price) {
+          price = parsePrice(booking.service.price);
+      }
       
       // Calculate warranty expiry based on service warranty (mocked logic if not in booking)
       // Assuming booking.service object might have warranty info, or default to 12 months for now
       // In real app, booking snapshot should have warranty terms.
-      const bookingDate = new Date(booking.date || booking.scheduledAt);
-      const warrantyMonths = booking.serviceName?.toLowerCase().includes('oil') ? 3 : 12; // Simple heuristic
-      const warrantyUntilDate = addMonths(bookingDate, warrantyMonths);
-      const isWarrantyActive = warrantyUntilDate > new Date();
+      // Calculate warranty expiry based on Shop's policy if available, otherwise heuristic
+      // "Active Warranty" refers to the coverage on the COMPLETED work, not the quote validity.
+      const bookingDate = new Date(booking.date || booking.scheduledAt || booking.scheduledDate || new Date());
+      
+      // Use shop's defined warranty days or default to heuristic (3 mo for oil, 12 mo for others)
+      let warrantyDays = booking.shop?.warrantyDays;
+      if (!warrantyDays) {
+          warrantyDays = booking.serviceName?.toLowerCase().includes('oil') ? 90 : 365;
+      }
+      
+      const warrantyUntilDate = new Date(bookingDate);
+      warrantyUntilDate.setDate(warrantyUntilDate.getDate() + warrantyDays);
+      
+      const now = new Date();
+      const isWarrantyActive = warrantyUntilDate > now;
+      const daysRemaining = isWarrantyActive ? Math.ceil((warrantyUntilDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : 0;
 
-      if (booking.status === 'Completed') {
+      if (booking.status === 'COMPLETED') {
         tServices++;
         tSpent += price;
       }
 
       historyItems.push({
         id: booking.id,
-        serviceName: booking.serviceName || 'Unknown Service',
-        shopName: booking.shopName || 'Unknown Shop',
-        date: new Date(booking.date || booking.createdAt).toLocaleDateString(),
+        serviceName: booking.serviceName || booking.service?.name || 'Custom Service',
+        shopName: booking.shopName || booking.shop?.name || 'Custom Shop',
+        date: new Date(booking.date || booking.createdAt || booking.scheduledDate).toLocaleDateString(),
         status: isWarrantyActive ? 'warranty' : 'completed',
         total: price,
-        warrantyUntil: warrantyUntilDate.toLocaleDateString()
+        warrantyUntil: warrantyUntilDate.toLocaleDateString(),
+        warrantyDaysRemaining: daysRemaining
       });
     });
 
-    // Filter only Completed for the list view if desired, or keep all. 
-    // The previous static list seemed to imply past events.
-    const completedHistory = historyItems.filter(i => bookings.find(b => b.id === i.id)?.status === 'Completed');
+    // Filter only Completed for the list view if desired
+    const completedHistory = historyItems.filter(i => {
+        const b = bookings.find(b => b.id === i.id) as any;
+        return b?.status === 'COMPLETED';
+    });
     
     // Sort by date desc
     completedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -576,7 +615,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
             </h1>
             <p className="text-slate-400">{user.email}</p>
             <div className="flex items-center gap-2 mt-1">
-              <span className="badge badge-primary badge-sm">Member since 2021</span>
+              <span className="badge badge-primary badge-sm">Member since {new Date(user.createdAt || new Date()).getFullYear()}</span>
               <span className="badge badge-ghost badge-sm gap-1">
                 <Star className="w-3 h-3 fill-primary text-primary" /> 4.9 Rating
               </span>
@@ -652,7 +691,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                 Active Warranties
               </h3>
               {activeWarranties.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                   {activeWarranties.map(item => (
                     <div key={item.id} className="p-3 bg-slate-800/50 rounded-xl">
                       <p className="font-medium text-sm">{item.serviceName}</p>
@@ -758,7 +797,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                 </div>
               </div>
               <p className="text-2xl font-black">{activeWarranties.length}</p>
-              <p className="text-sm text-slate-400">Active Warranties</p>
+              <div className="flex items-center justify-between">
+                 <p className="text-sm text-slate-400">Active Warranties</p>
+                 <div className="tooltip tooltip-left" data-tip="Warranties are automatically activated after verified services.">
+                    <AlertCircle className="w-4 h-4 text-slate-600 hover:text-white cursor-help" />
+                 </div>
+              </div>
             </div>
             <div className="glass-card rounded-2xl p-5 border border-white/5">
               <div className="flex items-center gap-3 mb-2">
@@ -774,7 +818,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
           {/* Service History Timeline */}
           <div className="glass-card rounded-2xl p-6 border border-white/5">
             <h3 className="font-bold text-lg mb-6">Service History</h3>
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
               {serviceHistoryItems.length === 0 ? (
                 <div className="text-center py-10 opacity-50">
                     <p>No service history found.</p>
@@ -806,9 +850,14 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                       </div>
                     </div>
                     {item.status === 'warranty' && (
-                      <div className="mt-2 badge badge-success badge-sm gap-1">
-                        <Shield className="w-3 h-3" />
-                        Warranty until {item.warrantyUntil}
+                      <div className="mt-2 flex gap-2">
+                        <div className="badge badge-success badge-sm gap-1 pl-1 pr-2 py-3 h-auto whitespace-nowrap">
+                          <Shield className="w-3 h-3" />
+                          <span className="font-bold">{item.warrantyDaysRemaining} Days Left</span>
+                          <span className="opacity-70 text-[10px] uppercase font-normal tracking-wide ml-1">
+                             (Expires {item.warrantyUntil})
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -840,7 +889,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ onLogin, onLogout }) =
                   </thead>
                   <tbody>
                     {bookings.map((booking: any) => (
-                      <tr key={booking.id} className="hover:bg-slate-800/50">
+                      <tr 
+                        key={booking.id} 
+                        className="hover:bg-slate-800/50 cursor-pointer" 
+                        onClick={() => onNavigate && onNavigate('bookings')}
+                      >
                         <td className="font-medium">{booking.service?.name || 'Service'}</td>
                         <td className="text-slate-400">{booking.shop?.name || 'Shop'}</td>
                         <td className="text-slate-400">{new Date(booking.scheduledDate).toLocaleDateString()}</td>

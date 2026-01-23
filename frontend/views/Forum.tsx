@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { MOCK_POSTS, MOCK_SHOPS } from '../constants';
 import { ForumPost, UserRole, Comment, Shop } from '../types';
 import api from '../services/api'; 
@@ -26,20 +27,23 @@ import {
   Video,
   MoreHorizontal,
   Edit2,
-  X
+  X,
+  Share2,
+  Copy
 } from 'lucide-react';
-import { generateMechanicAdvice } from '../services/geminiService';
+import { generateMechanicAdvice, improvePostDraft } from '../services/geminiService';
 
 interface ForumProps {
   currentRole: UserRole;
   onShopSelect: (shop: Shop) => void;
+  highlightPostId?: string;
 }
 
 type SortType = 'hot' | 'new' | 'top';
 
-export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
+export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect, highlightPostId }) => {
   const [posts, setPosts] = useState<ForumPost[]>([]);
-  const [currentUser, setCurrentUser] = useState<{ id: number; name: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string | number; name: string } | null>(null);
   
   // Create Post State
   const [newPostContent, setNewPostContent] = useState('');
@@ -56,10 +60,58 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
   const [editingPostId, setEditingPostId] = useState<string | number | null>(null);
   const [editContent, setEditContent] = useState('');
   
+  // AI Refinement State
+  const [isRefining, setIsRefining] = useState(false);
+  const [refinedDraft, setRefinedDraft] = useState<{title: string, content: string} | null>(null);
+
+  const convertFilesToBase64 = async (files: File[]): Promise<string[]> => {
+    return Promise.all(files
+        .filter(f => f.type.startsWith('image/'))
+        .map(file => new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = error => reject(error);
+        }))
+    );
+  };
+
+  const handleRefineWithAi = async () => {
+    if (!newPostContent.trim()) return;
+    setIsRefining(true);
+    setRefinedDraft(null);
+    try {
+        const base64Images = await convertFilesToBase64(newMediaFiles);
+        const result = await improvePostDraft(newPostContent, base64Images);
+        if (result.title && result.content) {
+            setRefinedDraft(result);
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        setIsRefining(false);
+    }
+  };
+
+  const applyRefinedDraft = () => {
+    if (refinedDraft) {
+        setNewPostTitle(refinedDraft.title);
+        setNewPostContent(refinedDraft.content);
+        setRefinedDraft(null);
+    }
+  };
+  
   const [newCommentContent, setNewCommentContent] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<SortType>('hot');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  // Share State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharingPost, setSharingPost] = useState<ForumPost | null>(null);
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [loadingShare, setLoadingShare] = useState(false);
+  const [selectedConversationIds, setSelectedConversationIds] = useState<number[]>([]);
+
   const [loading, setLoading] = useState(true);
 
   // Refs for file inputs
@@ -84,6 +136,20 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
     // Fetch current user
     api.get('/auth/me').then(res => setCurrentUser(res.data)).catch(() => {});
   }, []);
+
+  // Handle Deep Linking
+  useEffect(() => {
+      if (highlightPostId && posts.length > 0) {
+          setTimeout(() => {
+            const element = document.getElementById(`post-${highlightPostId}`);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.classList.add('ring-2', 'ring-primary', 'shadow-lg', 'shadow-primary/20');
+                setExpandedPostId(highlightPostId); // Auto-expand comments
+            }
+          }, 500); // Delay for render
+      }
+  }, [highlightPostId, posts]);
 
   // Trending topics extracted from posts
   const trendingTopics = useMemo(() => {
@@ -139,9 +205,17 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
     if (!newPostContent.trim()) return;
     setIsAskingAi(true);
     setAiResponse(null);
-    const response = await generateMechanicAdvice(newPostContent);
-    setAiResponse(response);
-    setIsAskingAi(false);
+    try {
+        // Reuse the helper to get base64 images
+        const base64Images = await convertFilesToBase64(newMediaFiles);
+        const response = await generateMechanicAdvice(newPostContent, undefined, base64Images);
+        setAiResponse(response);
+    } catch (e) {
+        console.error(e);
+        setAiResponse("Sorry, I encountered an error analyzing your request.");
+    } finally {
+        setIsAskingAi(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -398,6 +472,93 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
       return date.toLocaleDateString();
   };
 
+  // Share Logic
+  const openShareModal = async (post: ForumPost) => {
+    setSharingPost(post);
+    setShowShareModal(true);
+    setLoadingShare(true);
+    // Lock body scroll
+    document.body.style.overflow = 'hidden';
+    
+    try {
+        // Reuse fetch logic for conversations
+        const userStr = localStorage.getItem('user');
+        const currentUserId = userStr ? JSON.parse(userStr).id : 0;
+        const { data } = await api.get('/conversations');
+        
+        const transformedConvos = data.map((c: any) => {
+            let participantName = 'Unknown';
+            let participantId = 0;
+            
+            // Basic identification logic
+            if (c.shop) {
+                if (c.shop.userId === currentUserId) {
+                     const otherUser = c.user1Id === currentUserId ? c.user2 : c.user1;
+                     participantName = otherUser?.name || 'Unknown User';
+                     participantId = otherUser?.id || 0;
+                } else {
+                     participantName = c.shop.name;
+                     participantId = c.shop.id; 
+                }
+            } else {
+                const otherUser = c.user1Id === currentUserId ? c.user2 : c.user1;
+                participantName = otherUser?.name || 'Unknown User';
+                participantId = otherUser?.id || 0;
+            }
+
+            return { id: c.id, name: participantName, unread: c._count?.messages || 0 };
+        });
+        setConversations(transformedConvos);
+    } catch (e) {
+        console.error('Failed to load conversations', e);
+    } finally {
+        setLoadingShare(false);
+    }
+  };
+
+  const handleShareToConversations = async () => {
+    if (!sharingPost || selectedConversationIds.length === 0) return;
+
+    try {
+        const postLink = `${window.location.origin}/forum/post/${sharingPost.id}`;
+        // Structured message with metadata for rich preview
+        const messagePayload = {
+            text: `Check out this forum post: "${sharingPost.title}"\n${postLink}`,
+            metadata: {
+                type: 'forum_post_share',
+                postId: sharingPost.id,
+                title: sharingPost.title,
+                content: sharingPost.content.substring(0, 150) + (sharingPost.content.length > 150 ? '...' : ''),
+                author: sharingPost.author,
+                link: postLink,
+                image: sharingPost.images?.[0] || null
+            }
+        };
+        
+        // Send to all selected conversations
+        await Promise.all(
+            selectedConversationIds.map(id => 
+                api.post(`/conversations/${id}/messages`, messagePayload)
+            )
+        );
+        
+        showAlert.success(`Post shared to ${selectedConversationIds.length} conversation(s)!`);
+        setShowShareModal(false);
+        setSharingPost(null);
+        setSelectedConversationIds([]);
+        document.body.style.overflow = '';
+    } catch (e) {
+        console.error('Share failed', e);
+        showAlert.error('Failed to share message.');
+    }
+  };
+
+  const toggleConversationSelection = (id: number) => {
+    setSelectedConversationIds(prev => 
+        prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
+    );
+  };
+
   if (loading && posts.length === 0) {
       return <div className="flex justify-center p-12"><span className="loading loading-spinner text-primary"></span></div>;
   }
@@ -497,14 +658,27 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
                     <ImageIcon className="w-4 h-4" /> Photo/Video
                  </button>
 
-                <button 
-                  className="btn btn-sm btn-ghost gap-1 text-slate-400 hover:text-blue-400"
-                  onClick={handleAskAi}
-                  disabled={isAskingAi || !newPostContent}
-                >
-                  {isAskingAi ? <span className="loading loading-spinner loading-xs"></span> : <Bot className="w-4 h-4" />}
-                  Ask AI First
-                </button>
+                <div className="flex gap-2">
+                    <button 
+                      className="btn btn-sm gap-2 bg-blue-600 hover:bg-blue-700 text-white border-none transition-colors shadow-lg shadow-blue-900/20"
+                      onClick={handleAskAi}
+                      disabled={isAskingAi || !newPostContent}
+                    >
+                      {isAskingAi ? <span className="loading loading-spinner loading-xs text-white"></span> : <Bot className="w-4 h-4" />}
+                      Ask AI Advice
+                    </button>
+                    
+                    <button 
+                      className={`btn btn-sm gap-2 border-none transition-colors shadow-lg ${
+                        refinedDraft ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-900/20'
+                      }`}
+                      onClick={handleRefineWithAi}
+                      disabled={isRefining || !newPostContent || !!refinedDraft}
+                    >
+                      {isRefining ? <span className="loading loading-spinner loading-xs text-white"></span> : <Sparkles className="w-4 h-4" />}
+                      {refinedDraft ? 'Draft Improved!' : 'Refine Text'}
+                    </button>
+                </div>
               </div>
               <button 
                 className="btn btn-primary btn-sm gap-2"
@@ -515,14 +689,70 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
               </button>
             </div>
 
+            {/* AI Refined Draft Preview */}
+            {refinedDraft && (
+                <div className="mt-4 p-5 bg-purple-500/10 rounded-xl border border-purple-500/30 animate-fade-in relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-purple-500" />
+                    <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-2 text-purple-400 font-bold uppercase tracking-wider text-xs">
+                            <Sparkles className="w-4 h-4" />
+                            <span>Improved Draft Suggestion</span>
+                        </div>
+                        <button className="btn btn-xs btn-ghost text-slate-500" onClick={() => setRefinedDraft(null)}><X className="w-3 h-3" /></button>
+                    </div>
+                    
+                    <div className="bg-slate-900/50 p-3 rounded-lg border border-white/5 mb-3">
+                        <h4 className="font-bold text-white mb-1">{refinedDraft.title}</h4>
+                        <p className="text-sm text-slate-300 whitespace-pre-wrap">{refinedDraft.content}</p>
+                    </div>
+
+                    <button 
+                        className="btn btn-sm btn-block bg-purple-600 hover:bg-purple-700 text-white border-none"
+                        onClick={applyRefinedDraft}
+                    >
+                        Replace My Draft
+                    </button>
+                </div>
+            )}
+
             {/* AI Response */}
             {aiResponse && (
-              <div className="mt-4 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
-                <div className="flex items-center gap-2 mb-2 text-blue-400 font-bold">
-                  <Sparkles className="w-5 h-5" />
+              <div className="mt-4 p-5 bg-slate-900/80 rounded-xl border border-blue-500/30 animate-fade-in relative overflow-hidden group">
+                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
+                <div className="flex items-center gap-2 mb-3 text-blue-400 font-bold uppercase tracking-wider text-xs">
+                  <Sparkles className="w-4 h-4" />
                   <span>AI Mechanic Analysis</span>
                 </div>
-                <p className="text-sm whitespace-pre-wrap text-slate-300">{aiResponse}</p>
+                <div className="text-sm space-y-1">
+                  {aiResponse.split('\n').map((line, i) => {
+                    const isListItem = line.trim().startsWith('* ');
+                    const cleanLine = isListItem ? line.trim().substring(2) : line;
+                    
+                    const parts = cleanLine.split(/(\*\*.*?\*\*)/g).map((part, j) => {
+                       if (part.startsWith('**') && part.endsWith('**')) {
+                         return <strong key={j} className="text-white font-bold">{part.slice(2, -2)}</strong>;
+                       }
+                       return <span key={j}>{part}</span>;
+                    });
+
+                    if (isListItem) {
+                      return <div key={i} className="flex gap-2 ml-2 mb-2">
+                        <span className="text-blue-500 mt-1.5">•</span>
+                        <span className="text-slate-300 flex-1">{parts}</span>
+                      </div>;
+                    }
+                    return line.trim() ? <p key={i} className="mb-2 text-slate-300 leading-relaxed">{parts}</p> : <div key={i} className="h-2" />;
+                  })}
+                </div>
+                
+                <div className="mt-4 flex justify-end">
+                   <button 
+                     className="text-xs text-slate-500 hover:text-white flex items-center gap-1 transition-colors"
+                     onClick={() => setNewPostContent(prev => prev + '\n\n' + aiResponse)}
+                   >
+                     Add to post <ArrowRight className="w-3 h-3" />
+                   </button>
+                </div>
               </div>
             )}
           </div>
@@ -552,6 +782,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
               return (
                 <div 
                   key={post.id} 
+                  id={`post-${post.id}`}
                   className={`glass-card rounded-2xl border transition-all ${
                     hasShopResponse ? 'border-green-500/30 bg-green-500/5' : 'border-white/5'
                   }`}
@@ -582,7 +813,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
                         </div>
                         
                         {/* Post Actions Dropdown (Only for author) */}
-                        {currentUser && (post as any).authorId === currentUser.id && (
+                        {currentUser && String((post as any).authorId) === String(currentUser.id) && (
                         <div className="dropdown dropdown-end">
                             <label tabIndex={0} className="btn btn-ghost btn-circle btn-sm">
                                 <MoreHorizontal className="w-4 h-4" />
@@ -681,7 +912,10 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
                             <MessageSquare className="w-4 h-4" /> 
                             {post.comments.length > 0 ? `${post.comments.length} Comments` : 'Comment'}
                         </button>
-                        <button className="btn btn-ghost btn-sm gap-2 hover:bg-white/5 flex-1">
+                        <button 
+                            className="btn btn-ghost btn-sm gap-2 hover:bg-white/5 flex-1"
+                            onClick={() => openShareModal(post)}
+                        >
                             <ArrowRight className="w-4 h-4 -rotate-45" /> Share
                         </button>
                     </div>
@@ -807,6 +1041,118 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect }) => {
           </div>
         </div>
       </div>
+      {/* Share Modal - Centered with Multi-Select */}
+      {/* Share Modal - Centered with Multi-Select via Portal */}
+      {showShareModal && sharingPost && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            {/* Backdrop - Click to Close */}
+            <div 
+                className="absolute inset-0"
+                onClick={() => {
+                    setShowShareModal(false);
+                    setSelectedConversationIds([]);
+                    document.body.style.overflow = '';
+                }}
+            />
+            
+            <div className="relative z-10 bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
+                {/* Header */}
+                <div className="p-5 border-b border-white/10">
+                    <h3 className="font-bold text-lg">Share Post</h3>
+                    <p className="text-slate-400 text-sm mt-1">Share "<span className="text-white">{sharingPost.title}</span>"</p>
+                </div>
+
+                {/* Post Preview */}
+                <div className="p-4 border-b border-white/10 bg-slate-800/50">
+                    <div className="flex gap-3">
+                        {sharingPost.images?.[0] && (
+                            <img src={sharingPost.images[0].startsWith('http') ? sharingPost.images[0] : `http://localhost:5000${sharingPost.images[0]}`} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm line-clamp-2">{sharingPost.title}</p>
+                            <p className="text-xs text-slate-400 line-clamp-2 mt-1">{sharingPost.content.substring(0, 100)}...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* Conversations List */}
+                <div className="p-4">
+                    <p className="text-xs text-slate-400 mb-3 uppercase tracking-wider font-bold">Select Recipients</p>
+                    {loadingShare ? (
+                        <div className="flex justify-center p-8"><span className="loading loading-spinner"></span></div>
+                    ) : (
+                        <div className="space-y-2 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
+                             {conversations.length === 0 && <p className="text-center text-slate-500 py-4">No conversations found.</p>}
+                             {conversations.map(c => (
+                                 <label 
+                                    key={c.id}
+                                    className={`w-full flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${
+                                        selectedConversationIds.includes(c.id) 
+                                            ? 'bg-primary/10 border-primary/30' 
+                                            : 'hover:bg-slate-800 border-transparent hover:border-white/5'
+                                    }`}
+                                 >
+                                    <input 
+                                        type="checkbox"
+                                        className="checkbox checkbox-primary checkbox-sm"
+                                        checked={selectedConversationIds.includes(c.id)}
+                                        onChange={() => toggleConversationSelection(c.id)}
+                                    />
+                                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-slate-300">
+                                        {c.name.charAt(0)}
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="font-bold text-sm">{c.name}</div>
+                                        <div className="text-xs text-slate-400">Last active recently</div>
+                                    </div>
+                                 </label>
+                             ))}
+                        </div>
+                    )}
+                </div>
+                
+                {/* Actions */}
+                <div className="p-4 border-t border-white/10 space-y-3">
+                    <button 
+                        className="btn btn-primary btn-block gap-2"
+                        onClick={handleShareToConversations}
+                        disabled={selectedConversationIds.length === 0}
+                    >
+                        <Send className="w-4 h-4" /> 
+                        {selectedConversationIds.length > 0 
+                            ? `Send to ${selectedConversationIds.length} Conversation${selectedConversationIds.length > 1 ? 's' : ''}`
+                            : 'Select Recipients'
+                        }
+                    </button>
+                    
+                    <div className="divider text-xs text-slate-500 my-2">OR</div>
+                    
+                    <button 
+                        className="btn btn-outline btn-block gap-2"
+                        onClick={() => {
+                            const url = `${window.location.origin}/forum/post/${sharingPost.id}`;
+                            navigator.clipboard.writeText(url);
+                            showAlert.success('Link copied to clipboard!');
+                        }}
+                    >
+                        <Copy className="w-4 h-4" /> Copy Link
+                    </button>
+
+                    <button 
+                        className="btn btn-ghost btn-block" 
+                        onClick={() => { 
+                            setShowShareModal(false); 
+                            setSelectedConversationIds([]); 
+                            document.body.style.overflow = ''; 
+                        }}
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

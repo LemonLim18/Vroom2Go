@@ -17,6 +17,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleChange, currentView, onNavigate, onOpenChat }) => {
   const [conversations, setConversations] = useState<any[]>([]); // Using 'any' for now to match structure, ideally use Interface
   const [totalUnread, setTotalUnread] = useState(0);
+  const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
   const [userId, setUserId] = useState<number>(0);
   // Track online status of users we know about
   const [userStatuses, setUserStatuses] = useState<Record<number, { isOnline: boolean, lastActive?: string }>>({});
@@ -29,8 +30,25 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
        const u = JSON.parse(userStr);
        setUserId(u.id);
        fetchConversations(u.id);
+       
+       // If Shop, fetch pending bookings count
+       if (currentRole === UserRole.SHOP) {
+           fetchPendingBookings();
+       }
     }
   }, [currentRole]); // Re-fetch on role change safely
+
+  const fetchPendingBookings = async () => {
+    try {
+        // We can use the existing bookings endpoint and filter, or a cleaner count endpoint if available.
+        // For now, let's just get bookings and filter PENDING.
+        const { data } = await api.get('/bookings');
+        const pending = data.filter((b: any) => b.status === 'PENDING').length;
+        setPendingBookingsCount(pending);
+    } catch (error) {
+        console.error('Failed to fetch shop bookings count', error);
+    }
+  };
 
   const fetchConversations = async (uid: number) => {
       try {
@@ -43,16 +61,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
               const unread = c._count?.messages || 0;
               count += unread;
               
-              // Extract other user's initial status if available (backend needs to return it)
-              // Currently backend `listConversations` returns User objects. 
-              // We should check if `isOnline` is returned.
-              // Assuming I'll update `listConversations` to include `isOnline`?
-              // The schema update added it, but I didn't update the controller `include`?
-              // `prisma.findMany` returns fields of the model by default unless `select` is used.
-              // In `listConversations`, we used `select` for user1/user2!
-              // So I DO need to update backend controller to return `isOnline` and `lastActive`.
-              
-              // For now, let's assume we will fix backend controller next.
               const otherUser = c.user1Id === uid ? c.user2 : c.user1;
               if (otherUser) {
                   statuses[otherUser.id] = { 
@@ -93,8 +101,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
           setConversations(prev => {
             const exists = prev.find(c => c.id === msg.conversationId);
             if (!exists) {
-               // If it's a new conversation, we might need to refetch list or add it
-               // For now, refetching is safest to get all owner/shop details
                fetchConversations(userId);
                return prev;
             }
@@ -143,6 +149,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
         }));
       };
 
+      // Listen for socket events. Ideally we would also listen for 'new_booking' event here
+      // to real-time update the badge, but for now we settle for initial fetch.
+      
       socket.on('receive_message', handleReceive);
       socket.on('conversation_read', handleRead);
       socket.on('user_status_change', handleStatusChange);
@@ -153,12 +162,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
         socket.off('user_status_change', handleStatusChange);
       };
     });
-  }, [userId, conversations.length]); // Re-run if userId changes or new conversation added to join its room
+  }, [userId, conversations.length]); 
 
   const navItems = [
     { id: 'home', label: 'Home', icon: Home, roles: [UserRole.DRIVER] },
     { id: 'catalog', label: 'Services', icon: Search, roles: [UserRole.DRIVER] },
-    { id: 'dashboard', label: 'Garage', icon: Wrench, roles: [UserRole.SHOP] },
+    { id: 'dashboard', label: 'Garage', icon: Wrench, roles: [UserRole.SHOP], badge: pendingBookingsCount },
     { id: 'admin', label: 'HQ', icon: ShieldCheck, roles: [UserRole.ADMIN] },
     { id: 'quotes', label: 'Quotes', icon: FileText, roles: [UserRole.DRIVER] },
     { id: 'messages', label: 'Messages', icon: MessageSquare, roles: [UserRole.DRIVER], badge: totalUnread },

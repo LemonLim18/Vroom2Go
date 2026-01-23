@@ -107,8 +107,96 @@ export const ShopDashboard: React.FC = () => {
   const [shopReviews, setShopReviews] = useState<any[]>([]);
   const [respondingReviewId, setRespondingReviewId] = useState<number | null>(null);
   const [responseText, setResponseText] = useState('');
+  // Booking Tab State
+  const [activeBookingTab, setActiveBookingTab] = useState<'All' | 'Pending' | 'Confirmed' | 'In Progress' | 'Completed' | 'Cancelled'>('All');
   
-  // Availability calendar state
+  // Calculate Real Revenue Data from Bookings
+  const weeklyRevenueData = React.useMemo(() => {
+    // Initialize current week days
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const currentData = days.map(d => ({ name: d, revenue: 0 }));
+    
+    // Get start/end of current week
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+    startOfWeek.setHours(0,0,0,0);
+    
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+    shopBookings.forEach((booking: any) => {
+        if (booking.status === 'COMPLETED') { // Only count completed jobs
+            const date = new Date(booking.scheduledDate);
+            if (date >= startOfWeek && date < endOfWeek) {
+                const dayIndex = date.getDay(); // 0 is Sunday
+                const amount = parseFloat(booking.quote?.totalEstimate || booking.service?.price || 0);
+                if (!isNaN(amount)) {
+                    currentData[dayIndex].revenue += amount;
+                }
+            }
+        }
+    });
+    
+    // Reorder to start from Monday if preferred, but Sunday start is standard API
+    // Let's rotate to start Mon like previous mock data
+    const sunday = currentData.shift();
+    if (sunday) currentData.push(sunday);
+    
+    return currentData;
+  }, [shopBookings]);
+
+  // Filter and Sort Upcoming Jobs
+  const upcomingJobs = React.useMemo(() => {
+     return shopBookings
+        .filter((b: any) => ['PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(b.status))
+        .sort((a: any, b: any) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime())
+        .slice(0, 5);
+  }, [shopBookings]);
+
+  // Calculate Monthly Performance (Last 6 months)
+  const monthlyPerformanceData = React.useMemo(() => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
+    const data = [];
+    
+    // Generate last 6 months buckets
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthName = months[d.getMonth()];
+        const key = `${d.getFullYear()}-${d.getMonth()}`; // unique key for sorting/grouping
+        data.push({ 
+            name: monthName, 
+            key: key,
+            bookings: 0, 
+            revenue: 0,
+            sortDate: d.getTime()
+        });
+    }
+
+    shopBookings.forEach((b: any) => {
+        const date = new Date(b.scheduledDate);
+        const key = `${date.getFullYear()}-${date.getMonth()}`;
+        const bucket = data.find(d => d.key === key);
+        
+        if (bucket) {
+            // Count all non-cancelled bookings as "Bookings" (activity)
+            if (b.status !== 'CANCELLED') {
+                bucket.bookings += 1;
+            }
+            
+            // Count confirmed revenue
+            if (b.status === 'COMPLETED') {
+                const amount = parseFloat(b.quote?.totalEstimate || b.service?.price || 0);
+                if (!isNaN(amount)) {
+                   bucket.revenue += amount;
+                }
+            }
+        }
+    });
+
+    return data;
+  }, [shopBookings]);
   const [weekStart, setWeekStart] = useState(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -414,12 +502,12 @@ export const ShopDashboard: React.FC = () => {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`tab gap-2 h-auto py-2 min-h-[3rem] flex-shrink-0 ${activeTab === tab.id ? 'tab-active bg-primary text-black' : ''}`}
+            className={`tab gap-2 h-auto py-2 min-h-[3rem] flex-shrink-0 relative overflow-visible ${activeTab === tab.id ? 'tab-active bg-primary text-black' : ''}`}
           >
             <tab.icon className="w-4 h-4 flex-shrink-0" />
             <span className="text-xs md:text-sm text-left">{tab.label}</span>
             {(tab.badge || 0) > 0 && (
-              <span className="badge badge-error badge-xs flex-shrink-0">{tab.badge}</span>
+              <span className="absolute top-1 right-1 badge badge-error badge-xs flex-shrink-0">{tab.badge}</span>
             )}
           </button>
         ))}
@@ -483,13 +571,14 @@ export const ShopDashboard: React.FC = () => {
               <h2 className="font-bold text-lg mb-4">Revenue This Week</h2>
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={revenueData}>
+                  <BarChart data={weeklyRevenueData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                    <YAxis axisLine={false} tickLine={false} />
+                    <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `$${value}`} />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
                       cursor={{fill: 'rgba(250,204,21,0.1)'}}
+                      formatter={(value: number) => [`$${value.toFixed(2)}`, 'Revenue']}
                     />
                     <Bar dataKey="revenue" fill="#facc15" radius={[4, 4, 0, 0]} barSize={40} />
                   </BarChart>
@@ -501,26 +590,34 @@ export const ShopDashboard: React.FC = () => {
             <div className="glass-card rounded-2xl p-6 border border-white/5">
               <h2 className="font-bold text-lg mb-4">Upcoming Jobs</h2>
               <div className="space-y-3">
-                {shopBookings.slice(0, 4).map((booking: any) => (
-                  <div key={booking.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
-                    <div>
-                      <p className="font-bold text-sm">{booking.serviceName}</p>
-                      <p className="text-xs text-slate-400">{booking.date}</p>
-                    </div>
-                    <span className={`badge badge-sm ${
-                      booking.status === 'Confirmed' ? 'badge-primary' : 
-                      booking.status === 'Completed' ? 'badge-success' : 'badge-ghost'
-                    }`}>
-                      {booking.status}
-                    </span>
-                  </div>
-                ))}
-                <button 
-                  onClick={() => setShowAllJobsModal(true)}
-                  className="btn btn-sm btn-ghost w-full"
-                >
-                  View All
-                </button>
+                {upcomingJobs.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500 text-sm">No upcoming jobs scheduled.</div>
+                ) : (
+                    upcomingJobs.map((booking: any) => (
+                      <div key={booking.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer" onClick={() => setActiveTab('bookings')}>
+                        <div>
+                          <p className="font-bold text-sm text-white">{booking.service?.name || 'Custom Job'}</p>
+                          <p className="text-xs text-slate-400">
+                             {new Date(booking.scheduledDate).toLocaleDateString()} • {booking.vehicle?.make} {booking.vehicle?.model}
+                          </p>
+                        </div>
+                        <span className={`badge badge-sm ${
+                          booking.status === 'CONFIRMED' ? 'badge-info' : 
+                          booking.status === 'IN_PROGRESS' ? 'badge-primary' : 'badge-warning'
+                        }`}>
+                          {booking.status}
+                        </span>
+                      </div>
+                    ))
+                )}
+                {shopBookings.length > 0 && (
+                    <button 
+                      onClick={() => setActiveTab('bookings')}
+                      className="btn btn-sm btn-ghost w-full mt-2"
+                    >
+                      View All Activity
+                    </button>
+                )}
               </div>
             </div>
           </div>
@@ -585,30 +682,45 @@ export const ShopDashboard: React.FC = () => {
       {/* Bookings Tab */}
       {activeTab === 'bookings' && (
         <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h3 className="font-bold text-lg">Manage Bookings</h3>
-            <div className="flex gap-2">
-              <span className="badge badge-warning gap-1">
-                {shopBookings.filter(b => b.status === 'PENDING').length} Pending
-              </span>
-              <span className="badge badge-info gap-1">
-                {shopBookings.filter(b => b.status === 'CONFIRMED').length} Confirmed
-              </span>
-              <span className="badge badge-primary gap-1">
-                {shopBookings.filter(b => b.status === 'IN_PROGRESS').length} In Progress
-              </span>
+          <div className="flex flex-col space-y-4">
+            <div className="flex justify-between items-center">
+                <h3 className="font-bold text-lg">Manage Bookings</h3>
             </div>
-          </div>
+            
+            {/* Booking Status Tabs */}
+            <div className="flex flex-wrap gap-2 mb-2">
+                {['All', 'Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'].map(status => (
+                    <button
+                        key={status}
+                        onClick={() => setActiveBookingTab(status as any)}
+                        className={`btn btn-sm ${activeBookingTab === status ? 'btn-primary' : 'btn-ghost bg-slate-800/50'}`}
+                    >
+                        {status}
+                        <span className={`badge badge-sm ml-2 ${activeBookingTab === status ? 'bg-black/20 border-none' : 'bg-slate-700 border-none'}`}>
+                            {status === 'All' 
+                                ? shopBookings.length 
+                                : shopBookings.filter((b: any) => b.status === status.toUpperCase().replace(' ', '_')).length
+                            }
+                        </span>
+                    </button>
+                ))}
+            </div>
 
-          {shopBookings.length === 0 ? (
-            <div className="text-center py-20 border border-dashed border-white/5 rounded-3xl bg-slate-900/50">
-              <Calendar className="w-16 h-16 text-slate-600 mx-auto mb-4 opacity-50" />
-              <h3 className="text-xl font-bold text-slate-300">No bookings yet</h3>
-              <p className="text-slate-500">Incoming bookings will appear here</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {shopBookings.map((booking: any) => (
+           {(() => {
+             const filteredBookings = shopBookings.filter((b: any) => {
+                 if (activeBookingTab === 'All') return true;
+                 return b.status === activeBookingTab.toUpperCase().replace(' ', '_');
+             });
+
+             return filteredBookings.length === 0 ? (
+                <div className="text-center py-20 border border-dashed border-white/5 rounded-3xl bg-slate-900/50">
+                  <Calendar className="w-16 h-16 text-slate-600 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-xl font-bold text-slate-300">No {activeBookingTab.toLowerCase()} bookings</h3>
+                  <p className="text-slate-500">Bookings will appear here</p>
+                </div>
+             ) : (
+                <div className="space-y-4">
+                  {filteredBookings.map((booking: any) => (
                 <div key={booking.id} className="glass-card rounded-2xl p-5 border border-white/5 hover:border-primary/30 transition-all">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     {/* Customer & Vehicle Info */}
@@ -747,7 +859,9 @@ export const ShopDashboard: React.FC = () => {
                 </div>
               ))}
             </div>
-          )}
+          );
+        })()}
+        </div>
         </div>
       )}
 
@@ -1165,7 +1279,7 @@ export const ShopDashboard: React.FC = () => {
               <h3 className="font-bold text-lg mb-4">Monthly Performance</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={shopMetrics.charts?.monthly?.length ? shopMetrics.charts.monthly : monthlyData}>
+                  <LineChart data={monthlyPerformanceData}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} />
                     <YAxis yAxisId="left" axisLine={false} tickLine={false} />
@@ -1230,7 +1344,7 @@ export const ShopDashboard: React.FC = () => {
               <p className="text-sm text-slate-400">Shop Rating</p>
             </div>
             <div className="glass-card rounded-2xl p-5 border border-white/5 text-center">
-              <p className="text-3xl font-black">${shopMetrics.weeklyRevenue?.toLocaleString() || '0'}</p>
+              <p className="text-3xl font-black">${weeklyRevenueData.reduce((acc, curr) => acc + curr.revenue, 0).toLocaleString()}</p>
               <p className="text-sm text-slate-400">Weekly Revenue</p>
             </div>
             <div className="glass-card rounded-2xl p-5 border border-white/5 text-center">

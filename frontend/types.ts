@@ -197,7 +197,7 @@ export interface Shop {
   email?: string;
   verified: boolean;
   verifiedAt?: string;
-  services?: string[];
+  services?: any[];
   image?: string; // Legacy
   imageUrl?: string; // Match backend
   description?: string;

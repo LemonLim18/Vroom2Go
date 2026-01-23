@@ -73,7 +73,7 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
             warrantyDays: s.warrantyDays || s.warranty_days,
             depositPercent: s.depositPercent || s.deposit_percent,
             distance: '2.5 miles', 
-            services: s.services?.map((svc: any) => svc.service?.name).filter(Boolean) || ['General'],
+            services: s.services || [],
             availability: {}, 
             customPrices: {},
             reviews: [] 
