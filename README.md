@@ -7,8 +7,8 @@ This document is your definitive reference for deploying the Vroom2 Go platform 
 ## 🏗️ 1. Architecture Overview
 We use a **Multi-Container** approach split across instances or services:
 *   **Frontend**: React (Vite) + Nginx. Uses `BACKEND_URL` baked in at build time.
-*   **Backend**: Node.js + Express + Prisma. Connects DIRECTLY to AWS RDS.
-*   **Database**: AWS RDS (MySQL) - Managed Service.
+*   **Backend**: Node.js + Express + Prisma.
+*   **Database**: MySQL (Containerized) - Runs as a service inside the Backend Docker Compose.
 
 ---
 
@@ -21,7 +21,7 @@ Before launching instances, create two Security Groups in AWS EC2 Console.
 *   **Inbound Rules:**
     *   `SSH (22)` -> My IP (for your access)
     *   `Custom TCP (5000)` -> Anywhere `0.0.0.0/0` (API Access)
-    *   `MYSQL (3306)` -> From **Backend Instance Private IP** (if using RDS) or `0.0.0.0/0` (if testing)
+
 
 **2. Frontend Security Group (`vroom-frontend-sg`)**
 *   **Inbound Rules:**
@@ -111,8 +111,8 @@ The frontend needs to know the **Public IP** of your Backend AWS instance.
     PORT=5000
     NODE_ENV=production
 
-    # Database (Update with your RDS details)
-    DATABASE_URL="mysql://admin:password@rds-endpoint.aws.com:3306/vroom2go"
+    # Database (Connects to the 'db' container service)
+    DATABASE_URL="mysql://root:rootpassword@db:3306/vroom2go"
 
     # JWT Authentication
     JWT_SECRET=your-super-secure-production-secret
@@ -143,8 +143,11 @@ The frontend needs to know the **Public IP** of your Backend AWS instance.
 3.  **Initialize DB (First Time Only)**:
     ```bash
     docker exec backend-backend-1 npx prisma migrate deploy
+    docker exec backend-backend-1 npx prisma migrate deploy
     docker exec backend-backend-1 npx prisma db seed
     ```
+
+    *Note: The database container (`db`) starts automatically with the backend.*
 
 ### Frontend Instance (`vroom-frontend`)
 **Files Required on Server:**
@@ -187,7 +190,8 @@ When you change code (e.g., fix a bug):
 
 **Q: Database Connection Error?**
 *   **Check .env**: verify `DATABASE_URL` inside the backend container (`docker exec -it backend-backend-1 env`).
-*   **Check RDS SG**: Does RDS Security Group allow inbound from the Backend EC2 IP?
+*   **Check .env**: verify `DATABASE_URL` uses `@db:3306` (host is `db`, port `3306`).
+*   **Check Docker**: Run `docker ps` to ensure the `db` container is running healthy.
 
 **Q: Deploying changes but not seeing them?**
 *   Did you `docker push`?
