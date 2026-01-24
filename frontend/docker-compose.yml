@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: miinning/vroom2go_frontend:latest
+    build:
+      context: .
+      args:
+        - VITE_API_URL=${BACKEND_URL:-http://localhost:5000}/api
+        - VITE_SOCKET_URL=${BACKEND_URL:-http://localhost:5000}
+    ports:
+      - "80:80"
+    restart: always
