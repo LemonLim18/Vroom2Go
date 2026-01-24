@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MOCK_POSTS, MOCK_SHOPS } from '../constants';
 import { ForumPost, UserRole, Comment, Shop } from '../types';
-import api from '../services/api'; 
+import api, { BACKEND_URL } from '../services/api'; 
 import { showAlert } from '../utils/alerts'; 
 import { 
   MessageSquare, 
@@ -852,7 +852,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect, highlig
                                 post.images.map((img, idx) => (
                                     <img 
                                         key={idx} 
-                                        src={img.startsWith('http') ? img : `http://localhost:5000${img}`} 
+                                        src={img.startsWith('http') ? img : `${BACKEND_URL}${img}`} 
                                         alt="Post attachment" 
                                         className="w-full h-80 object-cover hover:scale-105 transition-transform duration-500" 
                                         onError={(e) => {
@@ -862,7 +862,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect, highlig
                                 ))
                             ) : post.image ? (
                                 <img 
-                                    src={post.image.startsWith('http') ? post.image : `http://localhost:5000${post.image}`} 
+                                    src={post.image.startsWith('http') ? post.image : `${BACKEND_URL}${post.image}`} 
                                     alt="Main attachment" 
                                     className="w-full h-80 object-cover" 
                                     onError={(e) => {
@@ -873,7 +873,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect, highlig
                             
                             {post.video && (
                                 <video 
-                                    src={post.video.startsWith('http') ? post.video : `http://localhost:5000${post.video}`}
+                                    src={post.video.startsWith('http') ? post.video : `${BACKEND_URL}${post.video}`}
                                     controls 
                                     className="w-full h-96 object-contain bg-black rounded-xl"
                                     playsInline
@@ -1066,7 +1066,7 @@ export const Forum: React.FC<ForumProps> = ({ currentRole, onShopSelect, highlig
                 <div className="p-4 border-b border-white/10 bg-slate-800/50">
                     <div className="flex gap-3">
                         {sharingPost.images?.[0] && (
-                            <img src={sharingPost.images[0].startsWith('http') ? sharingPost.images[0] : `http://localhost:5000${sharingPost.images[0]}`} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                            <img src={sharingPost.images[0].startsWith('http') ? sharingPost.images[0] : `${BACKEND_URL}${sharingPost.images[0]}`} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm line-clamp-2">{sharingPost.title}</p>

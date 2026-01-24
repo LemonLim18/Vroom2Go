@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: miinning/vroom2go_frontend:latest
+    ports:
+      - "80:80"
+    restart: always
+    # Frontend ENV vars are baked in at build time, so no need to set them here.
+    # Just ensure you built the image with the correct VITE_API_URL before pushing.

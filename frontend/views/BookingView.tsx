@@ -198,7 +198,17 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
 
   } else {
     // Standard Direct Booking Logic
-    const basePriceString = shop.customPrices?.[selectedServiceId] || '0';
+    // Standard Direct Booking Logic
+    // Find the shop service entry to get the custom price
+    const shopServiceEntry = (shop.services as any[])?.find(s => {
+      const sId = s.service?.id || s.id;
+      return String(sId) === String(selectedServiceId);
+    });
+
+    const basePriceString = shopServiceEntry?.customPrice 
+      ? String(shopServiceEntry.customPrice) 
+      : (shop.customPrices?.[selectedServiceId] || '0');
+
     basePrice = parseFloat(basePriceString.replace(/[^0-9.]/g, ''));
 
     const subtotal = basePrice + extraFee;
@@ -222,13 +232,11 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
     }
 
     // Format time correctly from the slot's startTime
-    // FIX: Project 1970 time to current date to avoid historical timezone offsets
+    // FIX: Use strict UTC components to build the HH:mm string
     const slotTimeDate = new Date(selectedSlot.startTime);
-    const time = new Date(); // Use today
-    time.setUTCHours(slotTimeDate.getUTCHours(), slotTimeDate.getUTCMinutes(), 0, 0);
-
-    const hours = time.getHours().toString().padStart(2, '0');
-    const minutes = time.getMinutes().toString().padStart(2, '0');
+    
+    const hours = slotTimeDate.getUTCHours().toString().padStart(2, '0');
+    const minutes = slotTimeDate.getUTCMinutes().toString().padStart(2, '0');
     const timeString = `${hours}:${minutes}`;
 
     // Warning confirmation for non-refundable deposit
@@ -413,12 +421,9 @@ export const BookingView: React.FC<BookingViewProps> = ({ shop, initialServiceId
                   <div className={`col-span-2 grid grid-cols-3 sm:grid-cols-4 gap-2 ${loadingSlots ? 'opacity-50 pointer-events-none' : ''}`}>
                     {availableSlots.length > 0 ? (
                       availableSlots.map(slot => {
-                        // FIX: Project 1970 time to current date to avoid historical timezone offsets (e.g. SG 1970 was +7.5)
+                        // FIX: Strict UTC display
                         const slotDate = new Date(slot.startTime);
-                        const time = new Date(); // Use today
-                        time.setUTCHours(slotDate.getUTCHours(), slotDate.getUTCMinutes(), 0, 0);
-                        
-                        const timeStr = time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                        const timeStr = slotDate.toLocaleTimeString([], { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' });
                         const isSelected = selectedTime === slot.id.toString();
                         
                         return (

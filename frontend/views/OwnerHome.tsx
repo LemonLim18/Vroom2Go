@@ -56,10 +56,17 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch shops
-        try {
-          const shopsRes = await api.get('/shops');
-          const mappedShops = shopsRes.data.map((s: any) => ({
+        setLoading(true);
+        const [shopsRes, vehiclesRes, servicesRes, diagPackagesRes] = await Promise.allSettled([
+          api.get('/shops'),
+          api.get('/vehicles'),
+          api.get('/services'),
+          api.get('/diagnostic-packages')
+        ]);
+
+        // Process Shops
+        if (shopsRes.status === 'fulfilled') {
+          const mappedShops = shopsRes.value.data.map((s: any) => ({
             id: s.id,
             userId: s.userId,
             name: s.name,
@@ -79,22 +86,22 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
             reviews: [] 
           }));
           setShops(mappedShops);
-        } catch (e) { console.error('Failed to fetch shops:', e); }
+        } else {
+          console.error('Failed to fetch shops:', shopsRes.reason);
+        }
 
-        // Fetch vehicles
-        try {
-          const vehiclesRes = await api.get('/vehicles');
-          const mappedVehicles = vehiclesRes.data.map((v: any) => ({
+        // Process Vehicles
+        if (vehiclesRes.status === 'fulfilled') {
+          const mappedVehicles = vehiclesRes.value.data.map((v: any) => ({
             ...v,
             image: v.imageUrl || 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&q=80&w=1000'
           }));
           setVehicles(mappedVehicles);
-        } catch (e) { console.error('Failed to fetch vehicles:', e); }
+        }
 
-        // Fetch services
-        try {
-          const servicesRes = await api.get('/services');
-          const mappedServices: Service[] = servicesRes.data.map((s: any) => {
+        // Process Services
+        if (servicesRes.status === 'fulfilled') {
+          const mappedServices: Service[] = servicesRes.value.data.map((s: any) => {
             const priceRange: any = {};
             if (Array.isArray(s.pricing)) {
               s.pricing.forEach((p: any) => {
@@ -117,12 +124,11 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
             };
           });
           setServices(mappedServices);
-        } catch (e) { console.error('Failed to fetch services:', e); }
+        }
 
-        // Fetch diagnostic packages
-        try {
-          const diagPackagesRes = await api.get('/diagnostic-packages');
-          const mappedDiagPackages: DiagnosticPackage[] = diagPackagesRes.data.map((pkg: any) => ({
+        // Process Packages
+        if (diagPackagesRes.status === 'fulfilled') {
+          const mappedDiagPackages: DiagnosticPackage[] = diagPackagesRes.value.data.map((pkg: any) => ({
             id: String(pkg.id),
             name: pkg.name,
             description: pkg.description,
@@ -131,8 +137,10 @@ export const OwnerHome: React.FC<OwnerHomeProps> = ({ onServiceSelect, onShopSel
             includes: pkg.includes || []
           }));
           setDiagnosticPackages(mappedDiagPackages);
-        } catch (e) { console.error('Failed to fetch diagnostic packages:', e); }
+        }
 
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err);
       } finally {
         setLoading(false);
       }

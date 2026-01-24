@@ -1,8 +1,12 @@
 import axios from 'axios';
 
+// Base URL for the backend (strictly without /api suffix)
+const rawUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+export const BACKEND_URL = rawUrl.replace(/\/api$/, '');
+
 // Create Axios instance with base configuration
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: `${BACKEND_URL}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -28,15 +32,22 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response && error.response.status === 401) {
-      // Clear invalid token and redirect to login if not already there
+    const isAuthRequest = error.config?.url?.includes('/auth/login') || 
+                         error.config?.url?.includes('/auth/register') ||
+                         error.config?.url?.includes('/auth/forgot-password');
+
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      const hadToken = !!localStorage.getItem('token');
+      
+      // Clear invalid session
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       
-      // Avoid redirect loops if already on login page
-      if (!window.location.pathname.includes('login') && !window.location.pathname.includes('onboarding')) {
-        // Optional: Redirect to login or show auth modal
-        // window.location.href = '/onboarding'; 
+      // Only redirect if we were actually "logged in" (had a token) 
+      // and this isn't a login attempt failing.
+      if (hadToken && !isAuthRequest) {
+          // Force refresh to clear all app state and show onboarding
+          window.location.href = '/'; 
       }
     }
     return Promise.reject(error);

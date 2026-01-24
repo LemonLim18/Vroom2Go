@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Shop, Service, ServiceCategory } from '../types';
-import api from '../services/api';
+import api, { BACKEND_URL } from '../services/api';
 import { 
   ShieldCheck, 
   Star, 
@@ -48,21 +48,23 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
             let price = 'Quote';
 
             if (typeof shopService === 'string') {
-                // Legacy string ID - skip, no longer supported without mock data
                 return;
-            } else if (shopService.service) {
-                // Transform backend service structure to frontend type
-                const s = shopService.service;
+            } 
+            
+            // Check for both nested 'service' object (standard) and flat structure (optimization)
+            const s = shopService.service || (shopService.name ? shopService : null);
+            
+            if (s) {
                 const categoryMap: any = { 'MAINTENANCE': 'Maintenance', 'REPAIR': 'Repair', 'DIAGNOSTIC': 'Diagnostic' };
-                const normalizedCategory = categoryMap[s.category] || s.category;
+                const normalizedCategory = categoryMap[s.category] || s.category || 'Other';
 
                 service = {
-                    id: String(s.id),
+                    id: String(s.id || s.serviceId),
                     name: s.name,
                     category: normalizedCategory,
                     description: s.description,
                     duration: s.durationEst ? `${s.durationEst} mins` : '60 mins',
-                    priceRange: {} // Range isn't used in the profile menu list
+                    priceRange: {}
                 };
                 price = shopService.customPrice ? `$${shopService.customPrice}` : 'Quote';
             }
@@ -80,6 +82,11 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
   }, [shop.services, shop.customPrices]);
 
   const categories = Object.keys(servicesByCategory);
+  
+  // Debug logs
+  console.log('ShopProfile Services:', shop.services);
+  console.log('Grouped Categories:', servicesByCategory);
+  console.log('Active Category:', activeCategory);
 
   // Set default active category
   React.useEffect(() => {
@@ -320,7 +327,7 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
                           <div className="avatar placeholder">
                             {authorAvatar ? (
                               <div className="w-12 rounded-xl overflow-hidden">
-                                <img src={authorAvatar.startsWith('http') ? authorAvatar : `http://localhost:5000${authorAvatar}`} alt={authorName} />
+                                <img src={authorAvatar.startsWith('http') ? authorAvatar : `${BACKEND_URL}${authorAvatar}`} alt={authorName} />
                               </div>
                             ) : (
                               <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-12 font-black">
@@ -350,7 +357,7 @@ export const ShopProfile: React.FC<ShopProfileProps> = ({ shop, onBack, onBook, 
                           {reviewImages.map((img: string, idx: number) => (
                             <img 
                               key={idx}
-                              src={img.startsWith('http') ? img : `http://localhost:5000${img}`}
+                              src={img.startsWith('http') ? img : `${BACKEND_URL}${img}`}
                               alt={`Review photo ${idx + 1}`}
                               className="w-24 h-24 object-cover rounded-lg border border-white/10 cursor-pointer hover:border-primary transition-colors"
                             />

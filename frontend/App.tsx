@@ -510,7 +510,7 @@ const App: React.FC = () => {
   const handleNavigate = (view: string, data?: any) => {
     // Clear selections when navigating to a new view to avoid "blocking" overlays
     // Unless data suggests we are in a sub-flow (this is a simple heuristic)
-    if (!data || (!data.keepContext && view !== 'booking' && view !== 'quote-request' && view !== 'compare')) {
+    if (!data || (!data.keepContext && view !== 'booking' && view !== 'quote-request')) {
         clearSelections();
     }
     

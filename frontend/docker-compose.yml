@@ -6,8 +6,9 @@ services:
     build:
       context: .
       args:
-        - VITE_API_URL=${BACKEND_URL:-http://localhost:5000}/api
+        - VITE_API_URL=${BACKEND_URL:-http://localhost:5000}
         - VITE_SOCKET_URL=${BACKEND_URL:-http://localhost:5000}
+        - VITE_GEMINI_API_KEY=${VITE_GEMINI_API_KEY}
     ports:
       - "80:80"
     restart: always

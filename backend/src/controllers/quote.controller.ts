@@ -129,7 +129,7 @@ export const getShopRequests = async (req: any, res: Response) => {
     });
 
     if (!shop) {
-      return res.status(400).json({ message: 'Shop profile not found' });
+      return res.status(404).json({ message: 'Shop profile not found' });
     }
 
     // Fetch recent open requests
@@ -187,7 +187,7 @@ export const getShopRespondedRequests = async (req: any, res: Response) => {
     });
 
     if (!shop) {
-      return res.status(400).json({ message: 'Shop profile not found' });
+      return res.status(404).json({ message: 'Shop profile not found' });
     }
 
     // Find quotes submitted by this shop, then get the associated requests

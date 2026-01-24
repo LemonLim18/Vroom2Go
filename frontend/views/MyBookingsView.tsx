@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../services/api';
+import api, { BACKEND_URL } from '../services/api';
 import {
   Calendar,
   Clock,
@@ -235,7 +235,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
         });
         
         // Prepend API base URL for image display
-        const fullUrl = data.url.startsWith('http') ? data.url : `http://localhost:5000${data.url}`;
+        const fullUrl = data.url.startsWith('http') ? data.url : `${BACKEND_URL}${data.url}`;
         setReviewImages(prev => [...prev, fullUrl]);
       }
     } catch (error) {
@@ -408,9 +408,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                         let d = new Date(booking.scheduledTime);
                         if (isNaN(d.getTime())) d = new Date(booking.scheduledTime.replace(' ', 'T'));
                         if (isNaN(d.getTime())) return 'Time Error';
-                        const projected = new Date();
-                        projected.setUTCHours(d.getUTCHours(), d.getUTCMinutes(), 0, 0);
-                        return projected.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        return d.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' });
                       } catch (e) { return 'Time Error'; }
                     })()}</span>
                     <Clock className="w-4 h-4 ml-1" />
@@ -419,7 +417,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                 </div> {/* Close Flex Row */}
 
                 {/* Reschedule Proposal Card */}
-                {booking.notes && booking.notes.includes('[RESCHEDULE PROPOSED]') && (() => {
+                {booking.notes && (booking.notes.includes('[RESCHEDULE PROPOSED]') || booking.notes.includes('[RESCHEDULE PROPOSED V2]')) && (() => {
                   const dateMatch = booking.notes.match(/New Date: (.*?)\n/);
                   const timeMatch = booking.notes.match(/New Time: (.*?)\n/);
                   const msgMatch = booking.notes.match(/Message: (.*)/);
@@ -479,7 +477,9 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                                  e.stopPropagation();
                                  // Reject logic (append note)
                                  try {
-                                   const rejectionNote = (booking.notes || '').replace(/\[RESCHEDULE PROPOSED\][\s\S]*?(?=\n\n|$)/, '').trim() + '\n\n[RESCHEDULE REJECTED] Customer declined proposed time.';
+                                   const rejectionNote = (booking.notes || '')
+                                      .replace(/\[RESCHEDULE PROPOSED( V2)?\][\s\S]*?(?=\n\n|$)/, '')
+                                      .trim() + '\n\n[RESCHEDULE REJECTED] Customer declined proposed time.';
                                    await api.put(`/bookings/${booking.id}/status`, {
                                      status: booking.status,
                                      notes: rejectionNote
@@ -612,7 +612,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onNavigate }) =>
                            d = new Date(selectedBooking.scheduledTime.replace(' ', 'T'));
                         }
                         return !isNaN(d.getTime()) 
-                          ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          ? d.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })
                           : 'Invalid Time';
                       } catch (e) { return 'Invalid Time'; }
                   })()}</p>

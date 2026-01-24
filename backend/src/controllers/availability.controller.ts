@@ -106,7 +106,7 @@ export const createTimeSlots = async (req: Request, res: Response) => {
 
     // Find the shop owned by this user
     const shop = await prisma.shop.findUnique({ where: { userId } });
-    if (!shop) return res.status(403).json({ message: 'You do not own a shop' });
+    if (!shop) return res.status(404).json({ message: 'Shop profile not found' });
 
     const { slots } = req.body; // Array of { date, startTime, endTime }
 
@@ -124,8 +124,10 @@ export const createTimeSlots = async (req: Request, res: Response) => {
         const [startHour, startMin] = slot.startTime.split(':').map(Number);
         const [endHour, endMin] = slot.endTime.split(':').map(Number);
 
-        const startTime = new Date(2000, 0, 1, startHour, startMin, 0);
-        const endTime = new Date(2000, 0, 1, endHour, endMin, 0);
+        // Use Date.UTC for time components to prevent timezone shifts on the server
+        // We us a fixed dummy date (2000-01-01) for the TIME columns to be consistent
+        const startTime = new Date(Date.UTC(2000, 0, 1, startHour, startMin, 0));
+        const endTime = new Date(Date.UTC(2000, 0, 1, endHour, endMin, 0));
 
         return prisma.timeSlot.upsert({
           where: {

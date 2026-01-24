@@ -14,11 +14,24 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
       token = req.headers.authorization.split(' ')[1];
 
       // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
+      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
 
-      // Add user to request (in robust app, fetch user from DB here to ensure exists)
-      req.user = decoded;
-      console.log(`[AUTH] User authenticated: ID=${req.user.id} Role=${req.user.role}`);
+      // Verify user actually exists in DB to prevent stale session issues (e.g. after DB reset)
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: { id: true, role: true }
+      });
+
+      if (!user) {
+        console.warn(`[AUTH] Token valid but user ID ${decoded.id} not found in DB.`);
+        return res.status(401).json({ message: 'User no longer exists' });
+      }
+
+      // Add user to request
+      req.user = user;
+      console.log(`[AUTH] User verified: ID=${user.id} Role=${user.role}`);
 
       next();
     } catch (error) {
@@ -28,7 +41,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
   }
 
   if (!token) {
-    res.status(401).json({ message: 'Not authorized, no token' });
+    return res.status(401).json({ message: 'Not authorized, no token' });
   }
 };
 

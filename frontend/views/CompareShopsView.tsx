@@ -44,11 +44,11 @@ export const CompareShopsView: React.FC<CompareShopsViewProps> = ({
     const fetchData = async () => {
       try {
         const [shopsRes, servicesRes] = await Promise.all([
-          api.get('/shops'),
+          api.get('/shops', { params: { serviceId } }),
           api.get('/services')
         ]);
         
-        // Map shops from API
+        // Map shops from API (Simplified - backend already does calculations)
         const mappedShops: Shop[] = shopsRes.data.map((s: any) => ({
           id: s.id,
           userId: s.userId,
@@ -56,16 +56,19 @@ export const CompareShopsView: React.FC<CompareShopsViewProps> = ({
           address: s.address,
           image: s.imageUrl || 'https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=1000',
           rating: Number(s.rating) || 0,
-          reviewCount: s._count?.reviews || s.reviewCount || 0,
+          reviewCount: s.reviewCount || s._count?.reviews || 0,
           verified: s.verified,
           laborRate: Number(s.laborRate),
-          services: s.services?.map((svc: any) => String(svc.service?.id || svc.serviceId)) || [],
+          services: s.services?.map((svc: any) => String(svc.serviceId)) || [],
           customPrices: s.services?.reduce((acc: any, svc: any) => {
-            if (svc.customPrice && svc.service?.id) {
-              acc[String(svc.service.id)] = `$${svc.customPrice}`;
+            if (svc.customPrice) {
+              acc[String(svc.serviceId)] = `$${svc.customPrice}`;
             }
             return acc;
-          }, {}) || {}
+          }, {}) || {},
+          distance: '2.4 mi', // Placeholder as before
+          warrantyDays: s.warrantyDays,
+          depositPercent: s.depositPercent
         }));
         setAllShops(mappedShops);
 

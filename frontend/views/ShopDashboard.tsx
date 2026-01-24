@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import api from '../services/api';
+import api, { BACKEND_URL } from '../services/api';
 import Swal from 'sweetalert2';
 import { themeConfig } from '../utils/alerts';
 import { ShopChatInterface } from '../components/ShopChatInterface';
@@ -240,10 +240,6 @@ export const ShopDashboard: React.FC = () => {
       }
     };
     fetchSlots();
-    
-    // Auto-refresh every 30 seconds to catch reschedule updates
-    const interval = setInterval(fetchSlots, 30000);
-    return () => clearInterval(interval);
   }, [shopId, weekStart]);
   
   // Fetch real quote requests
@@ -261,10 +257,6 @@ export const ShopDashboard: React.FC = () => {
           }
       };
       fetchRequests();
-      
-      // Poll every 30s
-      const interval = setInterval(fetchRequests, 30000);
-      return () => clearInterval(interval);
   }, []);
 
   // Fetch shop analytics/metrics
@@ -291,10 +283,6 @@ export const ShopDashboard: React.FC = () => {
           }
       };
       fetchBookings();
-      
-      // Refresh every 60s
-      const interval = setInterval(fetchBookings, 60000);
-      return () => clearInterval(interval);
   }, []);
 
   // Fetch shop reviews
@@ -898,7 +886,7 @@ export const ShopDashboard: React.FC = () => {
                         <div className="avatar placeholder">
                           {authorAvatar ? (
                             <div className="w-12 rounded-xl overflow-hidden">
-                              <img src={authorAvatar.startsWith('http') ? authorAvatar : `http://localhost:5000${authorAvatar}`} alt={authorName} />
+                              <img src={authorAvatar.startsWith('http') ? authorAvatar : `${BACKEND_URL}${authorAvatar}`} alt={authorName} />
                             </div>
                           ) : (
                             <div className="bg-slate-800 text-primary border border-white/10 rounded-xl w-12 font-black">
@@ -931,7 +919,7 @@ export const ShopDashboard: React.FC = () => {
                         {reviewImages.map((img: string, idx: number) => (
                           <img 
                             key={idx}
-                            src={img.startsWith('http') ? img : `http://localhost:5000${img}`}
+                            src={img.startsWith('http') ? img : `${BACKEND_URL}${img}`}
                             alt={`Review photo ${idx + 1}`}
                             className="w-20 h-20 object-cover rounded-lg border border-white/10"
                           />
@@ -1065,25 +1053,20 @@ export const ShopDashboard: React.FC = () => {
                         // Find slot for this day/time
                         // FIX: Project UTC time onto current date to avoid historical timezone offsets (1970 was +7.5)
                         const slot = timeSlots.find(s => {
-                          const sDate = new Date(s.date);
-                          const sTimeRaw = new Date(s.startTime);
+                          // Strict UTC Match:
+                          // The backend stores date as YYYY-MM-DDT00:00:00Z and time as 1970-01-01THH:MM:00Z
                           
-                          // Project to TODAY to use modern timezone (UTC+8)
-                          const sTime = new Date();
-                          sTime.setUTCHours(sTimeRaw.getUTCHours(), sTimeRaw.getUTCMinutes(), 0, 0);
-                          
-                          // Match Date (Local)
-                          const isDateMatch = 
-                            sDate.getDate() === day.getDate() &&
-                            sDate.getMonth() === day.getMonth() &&
-                            sDate.getFullYear() === day.getFullYear();
+                          // 1. Match Date String directly (YYYY-MM-DD)
+                          const slotDateStr = s.date.split('T')[0]; 
+                          const colDateStr = formatLocalDate(day);
+                          const isDateMatch = slotDateStr === colDateStr;
 
-                          // Match Time (Local - now correctly using modern offset)
-                          const h = sTime.getHours().toString().padStart(2, '0');
-                          const m = sTime.getMinutes().toString().padStart(2, '0');
-                          const isTimeMatch = `${h}:${m}` === time;
+                          // 2. Match UTC Hour
+                          const sTime = new Date(s.startTime);
+                          const slotHour = sTime.getUTCHours();
+                          const rowHour = parseInt(time.split(':')[0]);
                           
-                          return isDateMatch && isTimeMatch;
+                          return isDateMatch && slotHour === rowHour;
                         });
 
                         return (
@@ -1237,7 +1220,7 @@ export const ShopDashboard: React.FC = () => {
                   }).map(slot => (
                     <div key={slot.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
                       <div>
-                        <p className="font-medium">{new Date(slot.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className="font-medium">{new Date(slot.startTime).toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })}</p>
                         <p className="text-xs text-slate-400">{slot.booking?.vehicle?.make} {slot.booking?.vehicle?.model}</p>
                       </div>
                       <span className="badge badge-primary badge-sm">Booked</span>
@@ -1537,9 +1520,7 @@ export const ShopDashboard: React.FC = () => {
               <p className="font-bold">
                 {new Date(selectedBookingForReschedule.scheduledDate).toLocaleDateString()} @ {(() => {
                     const raw = new Date(selectedBookingForReschedule.scheduledTime);
-                    const projected = new Date();
-                    projected.setUTCHours(raw.getUTCHours(), raw.getUTCMinutes(), 0, 0);
-                    return projected.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    return raw.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' });
                 })()}
               </p>
               <p className="text-xs text-slate-500">{selectedBookingForReschedule.vehicle?.make} {selectedBookingForReschedule.vehicle?.model}</p>
@@ -1590,11 +1571,8 @@ export const ShopDashboard: React.FC = () => {
                       </div>
                     ) : rescheduleSlots.length > 0 ? (
                       rescheduleSlots.map(slot => {
-                        const slotDate = new Date(slot.startTime);
-                        const time = new Date();
-                        time.setUTCHours(slotDate.getUTCHours(), slotDate.getUTCMinutes(), 0, 0);
-                        const timeStr = time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
                         const isSelected = selectedRescheduleSlotId === slot.id.toString();
+                        const timeStr = new Date(slot.startTime).toLocaleTimeString([], { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' });
                         
                         return (
                           <button
@@ -1654,16 +1632,15 @@ export const ShopDashboard: React.FC = () => {
                      return;
                    }
                    
-                   // Format time from slot
+                   // Format time from slot (Using strict UTC) - MATCHES BUTTON LOGIC
                    const slotDate = new Date(selectedSlot.startTime);
-                   const time = new Date();
-                   time.setUTCHours(slotDate.getUTCHours(), slotDate.getUTCMinutes(), 0, 0);
-                   const timeString = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+                   const timeString = slotDate.toLocaleTimeString([], { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false });
                    
                    const reason = (document.getElementById('reschedule-reason') as HTMLTextAreaElement)?.value || '';
                    
                    // Logic to send message / persist proposal
-                   const proposalText = `\n\n[RESCHEDULE PROPOSED]\nNew Date: ${rescheduleDate}\nNew Time: ${timeString}\nMessage: ${reason}`;
+                   // Added V2 marker to verify deployment
+                   const proposalText = `\n\n[RESCHEDULE PROPOSED V2]\nNew Date: ${rescheduleDate}\nNew Time: ${timeString} (UTC)\nMessage: ${reason}`;
                    const updatedNotes = (selectedBookingForReschedule.notes || '') + proposalText;
 
                    try {

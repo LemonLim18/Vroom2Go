@@ -10,9 +10,11 @@ const prisma = new PrismaClient();
  */
 export const getShops = async (req: Request, res: Response) => {
   try {
-    const { search, verified, minRating } = req.query;
+    const { search, verified, minRating, serviceId } = req.query;
 
-    const where: any = {};
+    const where: any = {
+      isActive: true
+    };
 
     if (search) {
       where.OR = [
@@ -29,17 +31,24 @@ export const getShops = async (req: Request, res: Response) => {
       where.rating = { gte: parseFloat(String(minRating)) };
     }
 
-    const shopsRaw = await prisma.shop.findMany({
+    // New filter: Shops offering a specific service
+    if (serviceId) {
+      where.services = {
+        some: {
+          serviceId: parseInt(String(serviceId)),
+          isAvailable: true
+        }
+      };
+    }
+
+    const shops = await prisma.shop.findMany({
       where,
       include: {
-        hours: true,
         services: {
+          where: { isAvailable: true },
           include: {
             service: true
           }
-        },
-        reviews: {
-          select: { rating: true }
         },
         _count: {
           select: { reviews: true }
@@ -48,20 +57,6 @@ export const getShops = async (req: Request, res: Response) => {
       orderBy: {
         rating: 'desc'
       }
-    });
-
-    // Calculate real dynamic rating if the column might be stale
-    const shops = shopsRaw.map(shop => {
-      const reviewCount = shop._count.reviews;
-      const avgRating = reviewCount > 0 
-        ? shop.reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount 
-        : 0;
-      
-      return {
-        ...shop,
-        rating: avgRating || Number(shop.rating), // Fallback to column if no reviews yet (for seeded ones maybe)
-        reviewCount: reviewCount
-      };
     });
 
     res.json(shops);

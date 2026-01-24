@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, MessageCircle, Send, Search, Clock, CheckCheck, Paperclip, FileText, X, Loader2, Download, ChevronLeft, Phone, Video } from 'lucide-react';
-import api from '../services/api';
+import api, { BACKEND_URL } from '../services/api';
 import { socket } from '../services/socket';
 import { showAlert } from '../utils/alerts';
 
@@ -567,15 +567,15 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                                     {/* Show attachment if present */}
                                     {msg.attachmentUrl && msg.attachmentType === 'image' && (
                                       <img 
-                                        src={`${'http://localhost:5000'}${msg.attachmentUrl}`}
+                                        src={`${BACKEND_URL}${msg.attachmentUrl}`}
                                         alt="Attachment" 
                                         className="max-w-xs rounded-lg mb-2 cursor-pointer hover:opacity-90"
-                                        onClick={() => window.open(`${'http://localhost:5000'}${msg.attachmentUrl}`, '_blank')}
+                                        onClick={() => window.open(`${BACKEND_URL}${msg.attachmentUrl}`, '_blank')}
                                       />
                                     )}
                                     {msg.attachmentUrl && msg.attachmentType === 'pdf' && (
                                       <a 
-                                        href={`${'http://localhost:5000'}${msg.attachmentUrl}`}
+                                        href={`${BACKEND_URL}${msg.attachmentUrl}`}
                                         target="_blank" 
                                         rel="noopener noreferrer"
                                         className="flex items-center gap-2 bg-black/20 px-3 py-2 rounded-lg mb-2 hover:bg-black/30"
@@ -603,7 +603,7 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                                           {msg.metadata.image && (
                                             <div className="w-full h-32 rounded-lg overflow-hidden bg-slate-950">
                                                 <img 
-                                                  src={msg.metadata.image.startsWith('http') ? msg.metadata.image : `http://localhost:5000${msg.metadata.image}`} 
+                                                  src={msg.metadata.image.startsWith('http') ? msg.metadata.image : `${BACKEND_URL}${msg.metadata.image}`} 
                                                   alt="" 
                                                   className="w-full h-full object-cover"
                                                 />
@@ -665,7 +665,7 @@ export const ShopChatInterface: React.FC<ShopChatInterfaceProps> = ({ initialTar
                             <div className="bg-slate-800 rounded-xl p-3 flex items-center gap-3 border border-white/10">
                               {pendingAttachment.type === 'image' ? (
                                 <img 
-                                  src={pendingAttachment.url.startsWith('blob:') ? pendingAttachment.url : `${'http://localhost:5000'}${pendingAttachment.url}`} 
+                                  src={pendingAttachment.url.startsWith('blob:') ? pendingAttachment.url : `${BACKEND_URL}${pendingAttachment.url}`} 
                                   alt="Preview" 
                                   className="w-12 h-12 object-cover rounded-lg" 
                                 />

@@ -307,7 +307,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentRole, onRoleCha
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-40 bg-slate-900/95 backdrop-blur-xl md:hidden animate-in fade-in slide-in-from-top-10 duration-200">
+        <div className="fixed inset-0 z-[300] bg-slate-900/95 backdrop-blur-xl lg:hidden animate-in fade-in slide-in-from-top-10 duration-200">
           <div className="flex flex-col h-full p-6 pt-24 space-y-6 overflow-y-auto">
             
             {/* Mobile Navigation Links */}

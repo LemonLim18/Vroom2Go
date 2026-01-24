@@ -8,7 +8,7 @@ router.post('/', protect, createBooking);
 router.get('/my', protect, getMyBookings);
 router.get('/', protect, getMyBookings);
 router.get('/:id', protect, getBookingById);
-router.put('/:id/status', protect, authorize('SHOP'), updateBookingStatus);
+router.put('/:id/status', protect, updateBookingStatus);
 router.put('/:id/reschedule', protect, rescheduleBooking);
 router.put('/:id/cancel', protect, cancelBooking);
 

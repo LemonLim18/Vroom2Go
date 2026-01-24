@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell, Check, X, FileText, MessageSquare, Star, CreditCard, Settings } from 'lucide-react';
-import api from '../services/api';
+import api, { BACKEND_URL } from '../services/api';
 import { io, Socket } from 'socket.io-client';
 
 interface Notification {
@@ -27,8 +27,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
 
   // Fetch notifications on mount
   useEffect(() => {
-    fetchNotifications();
-    setupSocket();
+    const token = localStorage.getItem('token');
+    if (token) {
+        fetchNotifications();
+        setupSocket();
+    }
 
     return () => {
       if (socketRef.current) {
@@ -71,7 +74,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
       const payload = JSON.parse(atob(token.split('.')[1]));
       const userId = payload.id;
 
-      const socket = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000', {
+      const socket = io(BACKEND_URL, {
         transports: ['websocket', 'polling']
       });
 

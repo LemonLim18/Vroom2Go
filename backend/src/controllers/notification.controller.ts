@@ -298,3 +298,13 @@ export const notifyRescheduleAccepted = (shopUserId: number, customerName: strin
     `/dashboard?tab=calendar`
   );
 };
+
+export const notifyRescheduleRejected = (shopUserId: number, customerName: string, bookingId: number) => {
+  return createNotification(
+    shopUserId,
+    NotificationType.BOOKING,
+    'Reschedule Proposal Declined',
+    `${customerName} declined your reschedule proposal. Please check the booking notes.`,
+    `/bookings/${bookingId}`
+  );
+};

@@ -195,16 +195,38 @@ export const updateBookingStatus = async (req: any, res: Response) => {
 
     const booking = await prisma.booking.findUnique({
       where: { id: parseInt(req.params.id) },
-      include: { shop: true }
+      include: { 
+        shop: true,
+        user: { select: { name: true, email: true } } 
+      }
     });
 
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
-    // Only shop owner can update status
-    if (booking.shop.userId !== req.user.id) {
-      return res.status(403).json({ message: 'Not authorized to update this booking' });
+    // Authorization: Shop Owner OR Booking Owner (Customer)
+    const userId = parseInt(req.user.id); // Ensure number comparison
+    
+    const isShopOwner = booking.shop.userId === userId;
+    const isBookingOwner = booking.userId === userId;
+
+    console.log(`[UpdateBooking] ID Check: ReqUser=${userId} (type: ${typeof userId}), BookingUser=${booking.userId}, ShopUser=${booking.shop.userId}`);
+    console.log(`[UpdateBooking] Auth Result: isShopOwner=${isShopOwner}, isBookingOwner=${isBookingOwner}`);
+
+    if (!isShopOwner && !isBookingOwner) {
+      console.warn(`[UpdateBooking] 403 Forbidden: User ${userId} tried to modify booking ${booking.id} owned by User ${booking.userId}`);
+      return res.status(403).json({ 
+        message: 'Not authorized to update this booking',
+        debug: `User ID mismatch: Requesting as ${userId}, Booking belongs to ${booking.userId}`
+      });
+    }
+
+    // Additional safety: Customers can ONLY update notes or set status to CANCELLED
+    if (isBookingOwner && !isShopOwner) {
+        if (status && status !== 'CANCELLED' && status !== booking.status) {
+             return res.status(403).json({ message: 'Customers can only cancel bookings or update notes' });
+        }
     }
 
     const updatedBooking = await prisma.booking.update({
@@ -240,6 +262,12 @@ export const updateBookingStatus = async (req: any, res: Response) => {
         notifyBookingConfirmed(booking.userId, booking.shop.name || 'Your shop', booking.id);
       } else {
         notifyBookingStatusChange(booking.userId, status, booking.id);
+      }
+      
+      // Notify Shop if Customer Rejected Proposal
+      if (isBookingOwner && notes && notes.includes('[RESCHEDULE REJECTED]')) {
+         const { notifyRescheduleRejected } = await import('./notification.controller');
+         notifyRescheduleRejected(booking.shop.userId, booking.user?.name || 'Customer', booking.id);
       }
     } catch (notifyErr) {
       console.warn('Failed to send booking notification:', notifyErr);
@@ -282,8 +310,9 @@ export const rescheduleBooking = async (req: any, res: Response) => {
     }
 
     // 2. Find and Book New Slot
-    // Parse newTime "HH:MM"
-    const [h, m] = newTime.split(':').map(Number);
+    // Clean time string (remove "(UTC)" or other suffixes) and parse "HH:MM"
+    const cleanedTime = newTime.replace(/\s*\(UTC\)\s*/i, '').trim();
+    const [h, m] = cleanedTime.split(':').map(Number);
     
     // Use UTC Midnight for Date matching
     const searchDate = new Date(newDate); // YYYY-MM-DD
@@ -291,7 +320,7 @@ export const rescheduleBooking = async (req: any, res: Response) => {
     
     console.log(`[Reschedule] Looking for slot: shopId=${booking.shopId}, date=${dateParam.toISOString()}, hour=${h}, minute=${m}`);
 
-    // Query ALL slots for this shop/date and find one matching the hour/minute
+    // Query ALL slots for this shop/date
     const allSlotsForDate = await prisma.timeSlot.findMany({
        where: {
           shopId: booking.shopId,
@@ -302,29 +331,16 @@ export const rescheduleBooking = async (req: any, res: Response) => {
     console.log(`[Reschedule] Found ${allSlotsForDate.length} slots for this shop/date`);
     
     // Find the slot that matches the requested hour/minute
-    // The time is stored in UTC, so we need to compare UTC hours
-    // Frontend sends local time (e.g. 12:00 in UTC+8), which is stored as 04:00 UTC
-    const targetUtcHour = h - 8; // Adjust for UTC+8 (Singapore)
-    const adjustedHour = targetUtcHour < 0 ? targetUtcHour + 24 : targetUtcHour;
+    // V2 Frontend sends strict UTC time (e.g. "09:00"), and DB stores strict UTC ("09:00")
+    // So we perform a direct UTC-to-UTC match.
     
     let newSlot = allSlotsForDate.find(slot => {
        const slotTime = new Date(slot.startTime);
        const slotHour = slotTime.getUTCHours();
        const slotMinute = slotTime.getUTCMinutes();
        console.log(`  - Slot ID ${slot.id}: UTC hour=${slotHour}, minute=${slotMinute}, isBooked=${slot.isBooked}`);
-       return slotHour === adjustedHour && slotMinute === m && !slot.isBooked;
+       return slotHour === h && slotMinute === m && !slot.isBooked;
     });
-    
-    // Also try direct hour match (in case times are stored as local)
-    if (!newSlot) {
-       console.log(`[Reschedule] Trying direct hour match...`);
-       newSlot = allSlotsForDate.find(slot => {
-          const slotTime = new Date(slot.startTime);
-          const slotHour = slotTime.getHours(); // Local hours
-          const slotMinute = slotTime.getMinutes();
-          return slotHour === h && slotMinute === m && !slot.isBooked;
-       });
-    }
 
     if (newSlot) {
        console.log(`[Reschedule] FOUND matching slot ID ${newSlot.id}`);
@@ -356,15 +372,24 @@ export const rescheduleBooking = async (req: any, res: Response) => {
 
     // 3. Update Booking
     // Clean up the Proposal Note (remove the [RESCHEDULE PROPOSED] block)
+    // Clean up the Proposal Note (remove the [RESCHEDULE PROPOSED] block)
     const currentNotes = booking.notes || '';
-    const cleanedNotes = currentNotes.replace(/\[RESCHEDULE PROPOSED\][\s\S]*?(?=\n\n|$)/, '').trim() + 
-                        `\n\n[RESCHEDULED] Changed from ${new Date(booking.scheduledDate).toLocaleDateString()} to ${newDate} @ ${newTime}`;
+    // 1. Remove the Proposal block
+    let cleanedNotes = currentNotes.replace(/\[RESCHEDULE PROPOSED(?: V2)?\][\s\S]*?(?=\n\n|$)/, '').trim();
+    
+    // 2. Prepare confirmation string
+    const confirmationNote = `\n\n[RESCHEDULED] Changed from ${new Date(booking.scheduledDate).toLocaleDateString()} to ${newDate} @ ${newTime}`;
+    
+    // 3. Avoid duplicates if user double-clicks
+    if (!cleanedNotes.includes(confirmationNote.trim())) {
+        cleanedNotes += confirmationNote;
+    }
 
     const updated = await prisma.booking.update({
         where: { id: bookingId },
         data: {
-            scheduledDate: new Date(newDate),
-            scheduledTime: new Date(`${newDate}T${newTime}:00`),
+            scheduledDate: dateParam, // Already parsed as proper UTC date at midnight
+            scheduledTime: new Date(Date.UTC(2000, 0, 1, h, m, 0)), // Match TimeSlot storage format
             status: 'CONFIRMED',
             notes: cleanedNotes
         },

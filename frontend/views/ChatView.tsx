@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Shop } from '../types';
 import { socket } from '../services/socket';
-import api from '../services/api';
+import api, { BACKEND_URL } from '../services/api';
 import { Send, ArrowLeft, Phone, Video, Paperclip, CheckCheck, MapPin, FileText, X, Loader2, Download, Trash2, Edit2 } from 'lucide-react';
 import { showAlert } from '../utils/alerts';
 
@@ -256,15 +256,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
                     <div className={`chat-bubble rounded-2xl p-4 shadow-xl border ${msg.sender === 'user' ? 'bg-primary text-black font-bold border-primary shadow-primary/10' : 'bg-slate-800 text-white border-white/5 shadow-black/40'}`}>
                                     {msg.attachmentUrl && msg.attachmentType === 'image' && (
                                       <img 
-                                        src={`${'http://localhost:5000'}${msg.attachmentUrl}`}
+                                        src={`${BACKEND_URL}${msg.attachmentUrl}`}
                                         alt="Attachment" 
                                         className="max-w-xs rounded-lg mb-2 cursor-pointer hover:opacity-90"
-                                        onClick={() => window.open(`${'http://localhost:5000'}${msg.attachmentUrl}`, '_blank')}
+                                        onClick={() => window.open(`${BACKEND_URL}${msg.attachmentUrl}`, '_blank')}
                                       />
                                     )}
                                     {msg.attachmentUrl && msg.attachmentType === 'pdf' && (
                                       <a 
-                                        href={`${'http://localhost:5000'}${msg.attachmentUrl}`}
+                                        href={`${BACKEND_URL}${msg.attachmentUrl}`}
                                         target="_blank" 
                                         rel="noopener noreferrer"
                                         className="flex items-center gap-2 bg-black/20 px-3 py-2 rounded-lg mb-2 hover:bg-black/30"
@@ -292,7 +292,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ shop, onBack }) => {
                 <div className="bg-slate-800 rounded-xl p-3 flex items-center gap-3 border border-white/10">
                   {pendingAttachment.type === 'image' ? (
                     <img 
-                      src={pendingAttachment.url.startsWith('blob:') ? pendingAttachment.url : `${'http://localhost:5000'}${pendingAttachment.url}`} 
+                      src={pendingAttachment.url.startsWith('blob:') ? pendingAttachment.url : `${BACKEND_URL}${pendingAttachment.url}`} 
                       alt="Preview" 
                       className="w-16 h-16 object-cover rounded-lg" 
                     />
